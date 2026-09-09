@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install server dependencies
+        run: pip install -r server/requirements.txt
+
+      - name: Install test dependencies
+        run: pip install pytest ruff numpy
+
+      - name: Lint
+        run: ruff check server client tests
+
+      - name: Unit tests
+        run: pytest -q
+
+  client-import-sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile client package
+        run: python -m compileall -q client/opengirgit client/main.py
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install server dependencies
+        run: pip install -r server/requirements.txt
+      - name: End-to-end (mock LLM + real server + real client API layer)
+        run: python tests/e2e/run_e2e.py
