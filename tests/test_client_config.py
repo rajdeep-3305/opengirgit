@@ -1,0 +1,65 @@
+"""Client context formatting and settings behaviour (no Qt imports)."""
+
+from __future__ import annotations
+
+from opengirgit.config import DEFAULT_HOTKEYS, AppSettings
+from opengirgit.prompts import format_interview_context, format_resume_data
+
+RESUME = {
+    "name": "Ada Lovelace",
+    "email": "ada@example.com",
+    "summary": "First programmer.",
+    "experience": [
+        {"title": "Analyst", "company": "Difference Engine Co", "duration": "1842-1843",
+         "description": "Wrote the first algorithm."}
+    ],
+    "education": [{"degree": "Mathematics", "institution": "Home", "year": "1840"}],
+    "skills": ["mathematics", "analytical engine"],
+    "projects": [{"name": "Bernoulli numbers", "description": "Note G",
+                  "technologies": ["Analytical Engine"]}],
+    "languages": ["English"],
+}
+
+
+def test_resume_formatting_contains_sections():
+    text = format_resume_data(RESUME)
+    for fragment in (
+        "Ada Lovelace",
+        "--- Experience ---",
+        "Analyst at Difference Engine Co (1842-1843)",
+        "--- Education ---",
+        "mathematics, analytical engine",
+        "Bernoulli numbers",
+        "--- Languages ---",
+    ):
+        assert fragment in text
+
+
+def test_resume_formatting_handles_missing_data():
+    assert "no resume provided" in format_resume_data(None)
+
+
+def test_interview_context_includes_job_details():
+    text = format_interview_context(RESUME, "Acme", "Build things", "Ask about scale")
+    assert "Company: Acme" in text
+    assert "Job Description:\nBuild things" in text
+    assert "Additional Information:\nAsk about scale" in text
+
+
+def test_interview_context_defaults():
+    text = format_interview_context(None, "", "", "")
+    assert "Company: Not specified" in text
+    assert "Job Description: Not provided" in text
+
+
+def test_settings_round_trip_and_clamping():
+    settings = AppSettings.from_dict({"opacity": 5.0, "stt_engine": "banana", "unknown": 1})
+    assert settings.opacity == 1.0
+    assert settings.stt_engine == "local"
+    assert not hasattr(settings, "unknown")
+
+
+def test_settings_hotkeys_merge_defaults():
+    settings = AppSettings.from_dict({"hotkeys": {"ask": "Ctrl+Shift+Q"}})
+    assert settings.hotkeys["ask"] == "Ctrl+Shift+Q"
+    assert set(DEFAULT_HOTKEYS) <= set(settings.hotkeys)
