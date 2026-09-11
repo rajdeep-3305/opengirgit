@@ -1,0 +1,232 @@
+"""HTTP client for the OpenGirGit server (sync; used from worker threads)."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from typing import Any
+
+import httpx
+
+DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=10.0)
+
+
+class ApiError(Exception):
+    """Any non-2xx response or transport failure, with a human message."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class Cancelled(Exception):
+    """Raised inside a stream when the caller cancels."""
+
+
+def _normalise_base_url(url: str) -> str:
+    url = (url or "").strip().rstrip("/")
+    if url and not url.startswith(("http://", "https://")):
+        url = "http://" + url
+    return url
+
+
+class ApiClient:
+    def __init__(
+        self,
+        base_url: str,
+        token: str | None = None,
+        *,
+        timeout: httpx.Timeout | float | None = None,
+    ) -> None:
+        self.base_url = _normalise_base_url(base_url)
+        self.token = token
+        self.timeout = timeout or DEFAULT_TIMEOUT
+
+    # -- plumbing --------------------------------------------------------- #
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Accept": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        timeout: httpx.Timeout | float | None = None,
+    ) -> dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        try:
+            response = httpx.request(
+                method,
+                url,
+                json=payload,
+                headers=self._headers(),
+                timeout=timeout or self.timeout,
+            )
+        except httpx.ConnectError as exc:
+            raise ApiError(f"cannot reach {self.base_url} — is the server running?") from exc
+        except httpx.TimeoutException as exc:
+            raise ApiError("the server took too long to answer") from exc
+        except httpx.HTTPError as exc:
+            raise ApiError(f"network error: {exc}") from exc
+
+        if response.status_code >= 400:
+            raise ApiError(_error_message(response), status_code=response.status_code)
+        try:
+            return response.json()
+        except json.JSONDecodeError as exc:
+            raise ApiError("the server returned malformed JSON") from exc
+
+    # -- auth ------------------------------------------------------------- #
+
+    def send_otp(self, email: str) -> dict[str, Any]:
+        return self._request("POST", "/api/auth/otp/send", payload={"email": email})
+
+    def verify_otp(self, email: str, code: str) -> dict[str, Any]:
+        return self._request(
+            "POST", "/api/auth/otp/verify", payload={"email": email, "otp": code}
+        )
+
+    def refresh(self) -> dict[str, Any]:
+        return self._request("POST", "/api/auth/refresh")
+
+    def me(self) -> dict[str, Any]:
+        return self._request("GET", "/api/auth/me")
+
+    def save_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/api/auth/profile", payload={"profile": profile})
+
+    def get_version(self) -> dict[str, Any]:
+        return self._request("GET", "/api/version")
+
+    def parse_resume(self, resume_text: str) -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            "/api/resume/parse",
+            payload={"resume_text": resume_text},
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
+        )
+        return data.get("resume") or {}
+
+    def get_stt_token(self) -> dict[str, Any]:
+        return self._request("POST", "/api/stt/token", timeout=DEFAULT_TIMEOUT)
+
+    # -- streaming completions -------------------------------------------- #
+
+    def chat_stream(
+        self,
+        message: str,
+        *,
+        conversation_history: list[dict[str, str]] | None = None,
+        context: str = "",
+        on_chunk: Callable[[str], None] | None = None,
+        cancel: Callable[[], bool] | None = None,
+        model: str | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {
+            "message": message,
+            "conversation_history": conversation_history or [],
+            "context": context,
+        }
+        if model:
+            payload["model"] = model
+        return self._stream("/api/llm/chat/stream", payload, on_chunk, cancel)
+
+    def vision_stream(
+        self,
+        prompt: str,
+        images_b64: list[str],
+        *,
+        conversation_history: list[dict[str, str]] | None = None,
+        context: str = "",
+        on_chunk: Callable[[str], None] | None = None,
+        cancel: Callable[[], bool] | None = None,
+        model: str | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {
+            "prompt": prompt,
+            "images": images_b64,
+            "conversation_history": conversation_history or [],
+            "context": context,
+        }
+        if model:
+            payload["model"] = model
+        return self._stream("/api/llm/vision/stream", payload, on_chunk, cancel)
+
+    def _stream(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        on_chunk: Callable[[str], None] | None,
+        cancel: Callable[[], bool] | None,
+    ) -> str:
+        url = f"{self.base_url}{path}"
+        chunks: list[str] = []
+        headers = {**self._headers(), "Accept": "text/event-stream"}
+        try:
+            with httpx.Client(timeout=STREAM_TIMEOUT) as client:
+                with client.stream("POST", url, json=payload, headers=headers) as response:
+                    if response.status_code >= 400:
+                        response.read()
+                        raise ApiError(_error_message(response), status_code=response.status_code)
+                    for line in response.iter_lines():
+                        if cancel is not None and cancel():
+                            raise Cancelled()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data:
+                            continue
+                        try:
+                            event = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        if event.get("error"):
+                            raise ApiError(str(event["error"]))
+                        text = event.get("chunk")
+                        if isinstance(text, str) and text:
+                            chunks.append(text)
+                            if on_chunk is not None:
+                                on_chunk(text)
+                        if event.get("done"):
+                            return "".join(chunks)
+        except Cancelled:
+            raise
+        except ApiError:
+            raise
+        except httpx.ConnectError as exc:
+            raise ApiError(f"cannot reach {self.base_url} — is the server running?") from exc
+        except httpx.HTTPError as exc:
+            raise ApiError(f"streaming failed: {exc}") from exc
+        return "".join(chunks)
+
+    # -- helpers ----------------------------------------------------------- #
+
+    @staticmethod
+    def health(base_url: str) -> dict[str, Any]:
+        url = f"{_normalise_base_url(base_url)}/api/health"
+        try:
+            response = httpx.get(url, timeout=5.0)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as exc:
+            raise ApiError(f"health check failed: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ApiError("server did not return JSON") from exc
+
+
+def _error_message(response: httpx.Response) -> str:
+    """Extract FastAPI's ``detail`` when possible."""
+    try:
+        body = response.json()
+        if isinstance(body, dict) and body.get("detail"):
+            return str(body["detail"])
+    except Exception:
+        pass
+    text = response.text.strip()
+    return text[:300] if text else f"HTTP {response.status_code}"
