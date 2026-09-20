@@ -304,6 +304,7 @@ def main(argv: list[str] | None = None) -> int:
     credentials = CredentialsStore()
     session = _authenticate(settings, credentials)
     if session is None:
+        print("Sign-in cancelled.")
         return 1
     email, api = session
 

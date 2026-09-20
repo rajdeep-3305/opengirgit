@@ -113,8 +113,9 @@ opengirgit/
 │   ├── main.py
 │   ├── requirements.txt
 │   └── .env.example
-├── tests/                     ← offline unit tests (no network, no Qt needed)
-└── .github/workflows/ci.yml   ← lint + tests
+├── tests/                     ← offline unit tests (server units + client units)
+│   └── e2e/                   ← mock OpenAI-compatible model + end-to-end script
+└── .github/workflows/ci.yml   ← lint + tests + e2e
 ```
 
 ## Quick start
@@ -227,7 +228,7 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `auto_ask` | `true` | Submit a question automatically when a final transcript arrives. |
 | `opacity` | `0.96` | Overlay opacity. |
 | `screenshot_prompt` | built-in | Prompt used for screenshot analysis. |
-| `hotkeys` | see below | Any hotkey can be remapped as `"Shift+Alt+K"` style strings. |
+| `hotkeys` | see below | Hotkey combos as `"Shift+Alt+K"` strings; shown read-only in the settings dialog — edit `~/.opengirgit/config.json` to change them. |
 
 Files written by the client: `~/.opengirgit/{config,credentials,context,conversations,resume_cache}.json`.
 `credentials.json` is plaintext and contains a bearer token — keep it out of
