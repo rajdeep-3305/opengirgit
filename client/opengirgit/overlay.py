@@ -288,7 +288,8 @@ class OverlayWindow(QWidget):
 
     def _refresh_devices(self) -> None:
         source = "loopback" if self._settings.audio_source == "system" else "input"
-        devices = list_devices()
+        all_devices = list_devices()
+        devices = [device for device in all_devices if device.kind == source] or all_devices
         current = self._settings.audio_device
 
         self._device_combo.blockSignals(True)
@@ -302,12 +303,8 @@ class OverlayWindow(QWidget):
         self._device_combo.blockSignals(False)
 
         if not current and devices:
-            for device in devices:
-                if device.kind == source and device.is_default:
-                    self._settings.audio_device = device.id
-                    break
-            else:
-                self._settings.audio_device = devices[0].id
+            chosen = next((d for d in devices if d.is_default), devices[0])
+            self._settings.audio_device = chosen.id
             self._settings.save()
 
     def _on_device_changed(self, _index: int) -> None:
