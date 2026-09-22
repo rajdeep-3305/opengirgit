@@ -37,3 +37,8 @@ models/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
