@@ -308,6 +308,8 @@ Test layout:
 | `tests/test_client_hotkeys.py` | hotkey string parsing (skipped without PySide6) |
 | `tests/test_client_api.py` | SSE assembly, error events, cancellation, URL handling |
 | `tests/test_client_ui.py` | headless (offscreen) construction + stream + wiring + teardown |
+| `tests/e2e/run_e2e.py` | boots the real server + mock model and drives the client HTTP layer |
+| `tests/e2e/stt_smoke.py` | optional live STT check (file replay or live capture, needs faster-whisper) |
 
 The UI tests run under `QT_QPA_PLATFORM=offscreen` and are automatically skipped
 when PySide6 is not installed. On top of the unit tests there is an end-to-end
@@ -316,6 +318,43 @@ the real client HTTP layer (`python tests/e2e/run_e2e.py`) — CI runs it on eve
 push. Tests never touch the network, Qt or optional heavy dependencies except
 where noted above; client DSP is exercised through `client/opengirgit/dsp.py`,
 which is deliberately dependency-light (numpy only).
+
+### Verifying speech-to-text on your machine
+
+The unit tests never load a model. To exercise the real pipeline end-to-end
+(down-mix → resample → voice-activity segmentation → faster-whisper):
+
+```bash
+pip install faster-whisper        # already in client/requirements.txt
+
+# replay an audio file (16-bit PCM; any sample rate / channel count):
+python tests/e2e/stt_smoke.py --wav speech.wav --model base.en --expect "hello"
+
+# live capture — on Windows this records speaker output via WASAPI loopback:
+python tests/e2e/stt_smoke.py --capture 8 --source system
+
+# live capture from a microphone on an explicit device:
+python tests/e2e/stt_smoke.py --capture 8 --source microphone --device input:3
+```
+
+The first run downloads the model; the script exits 0 only when a transcript
+(and the `--expect` substring, if given) came back.
+
+### Verification status
+
+| Area | Verification |
+|---|---|
+| Server (auth, profiles, SSE chat/vision, resume, limits) | ✅ unit tests + live HTTP smoke + `run_e2e.py` |
+| Client HTTP (auth, chat, vision, resume, error paths) | ✅ live against the real server and the mock model |
+| DSP chain (down-mix → resample → PCM16) | ✅ unit tests + real audio replay |
+| Local STT (faster-whisper) | ✅ real speech clip transcribed word-perfect via `stt_smoke.py`, both 16 kHz mono and 48 kHz stereo through the capture chain |
+| GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
+| WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
+| Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 14 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
+| Stealth (`WDA_EXCLUDEFROMCAPTURE`, Windows-only) | ⏳ verify with a screen-share |
+| Deepgram engine | ⏳ needs an API key (`stt_engine=deepgram`) |
+| Real model provider | ✅ any OpenAI-compatible endpoint (mock used in CI; point `.env` at your provider) |
+| Visual polish (fonts, sizes, DPI) | ⏳ designed for Windows at 100–150 % scaling; not pixel-verified |
 
 ## Roadmap
 
