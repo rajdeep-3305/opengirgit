@@ -100,7 +100,8 @@ class LocalWhisperEngine(SttEngine):
 
         self.status.emit("listening")
         frame_seconds = 1024 / TARGET_RATE
-        silence_frames_needed = max(1, int(self.SILENCE_SECONDS / frame_seconds))
+        silence_seconds = float(getattr(self._settings, "silence_seconds", self.SILENCE_SECONDS))
+        silence_frames_needed = max(1, int(silence_seconds / frame_seconds))
         preroll_max = max(1, int(self.PREROLL_SECONDS / frame_seconds))
         max_samples = int(self.MAX_UTTERANCE_SECONDS * TARGET_RATE)
 

@@ -59,6 +59,12 @@ def test_settings_round_trip_and_clamping():
     assert not hasattr(settings, "unknown")
 
 
+def test_silence_seconds_default_and_clamping():
+    assert AppSettings().silence_seconds == 0.9
+    assert AppSettings.from_dict({"silence_seconds": 0.01}).silence_seconds == 0.2
+    assert AppSettings.from_dict({"silence_seconds": 99}).silence_seconds == 3.0
+
+
 def test_settings_hotkeys_merge_defaults():
     settings = AppSettings.from_dict({"hotkeys": {"ask": "Ctrl+Shift+Q"}})
     assert settings.hotkeys["ask"] == "Ctrl+Shift+Q"

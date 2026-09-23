@@ -44,6 +44,7 @@ _ENV_MAP = {
     "OPENGIRGIT_AUDIO_SOURCE": ("audio_source", str),
     "OPENGIRGIT_AUDIO_DEVICE": ("audio_device", str),
     "OPENGIRGIT_AUTO_ASK": ("auto_ask", "bool"),
+    "OPENGIRGIT_SILENCE_SECONDS": ("silence_seconds", float),
     "OPENGIRGIT_OPACITY": ("opacity", float),
     "OPENGIRGIT_SCREENSHOT_PROMPT": ("screenshot_prompt", str),
 }
@@ -58,6 +59,7 @@ class AppSettings:
     whisper_model: str = "base.en"
     whisper_compute_type: str = "int8"
     language: str = "en"
+    silence_seconds: float = 0.9  # silence that ends an utterance (lower = snappier)
 
     # Audio capture
     audio_source: str = "system"  # "system" (loopback) | "microphone"
@@ -84,6 +86,7 @@ class AppSettings:
         merged.update({k: v for k, v in (clean.get("hotkeys") or {}).items() if isinstance(v, str)})
         settings.hotkeys = merged
         settings.opacity = min(max(float(settings.opacity), 0.3), 1.0)
+        settings.silence_seconds = min(max(float(settings.silence_seconds), 0.2), 3.0)
         if settings.stt_engine not in ("local", "deepgram"):
             settings.stt_engine = "local"
         if settings.audio_source not in ("system", "microphone"):

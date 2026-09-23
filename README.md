@@ -223,6 +223,7 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `whisper_model` | `base.en` | faster-whisper model name. |
 | `whisper_compute_type` | `int8` | `int8`, `int8_float16`, `float16`, `float32`. |
 | `language` | `en` | Transcription/speech language hint. |
+| `silence_seconds` | `0.9` | Silence that ends an utterance (0.2–3.0). Lower = transcript appears sooner but questions may split. |
 | `audio_source` | `system` | `system` (loopback) or `microphone`. |
 | `audio_device` | *(auto)* | Device id from the dropdown; empty selects the default. |
 | `auto_ask` | `true` | Submit a question automatically when a final transcript arrives. |
