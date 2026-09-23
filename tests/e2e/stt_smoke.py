@@ -24,6 +24,9 @@ Examples
     # file replay, assert a phrase is present
     python tests/e2e/stt_smoke.py --wav speech.wav --expect "hello"
 
+    # measure real latency: real-time replay + the silence gate you intend to use
+    python tests/e2e/stt_smoke.py --wav speech.wav --realtime --model tiny.en --silence 0.4
+
     # live loopback capture on Windows (play audio while it runs)
     python tests/e2e/stt_smoke.py --capture 8 --source system
 
@@ -83,6 +86,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="base.en", help="whisper model name (default base.en)")
     parser.add_argument("--language", default="en", help="language code (default en)")
     parser.add_argument(
+        "--silence",
+        type=float,
+        default=0.9,
+        help="utterance silence gate in seconds (default 0.9, lower = snappier)",
+    )
+    parser.add_argument(
+        "--realtime",
+        action="store_true",
+        help="replay files at real-time pace and report end-of-audio -> final latency",
+    )
+    parser.add_argument(
         "--expect", default="", help="require this substring (case-insensitive) in the transcript"
     )
     parser.add_argument(
@@ -95,10 +109,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def settings_from_args(args: argparse.Namespace) -> AppSettings:
-    overrides = {"whisper_model": args.model, "language": args.language}
+    overrides: dict[str, object] = {
+        "whisper_model": args.model,
+        "language": args.language,
+        "silence_seconds": args.silence,
+    }
     if args.device:
         overrides["audio_device"] = args.device
-    return AppSettings.from_dict(overrides)
+    return AppSettings.from_dict(overrides)  # type: ignore[arg-type]
 
 
 class SmokeRun:
@@ -113,15 +131,28 @@ class SmokeRun:
         self.statuses: list[str] = []
         self.errors: list[str] = []
         self.started = time.time()
+        self.t_final: float | None = None
+        self.t_last_audio: float | None = None
+        self.listening = False
+        self.measure_latency = False
 
         self.engine = LocalWhisperEngine(settings)
-        self.engine.final.connect(self.finals.append)
-        self.engine.status.connect(self.statuses.append)
+        self.engine.final.connect(self._on_final)
+        self.engine.status.connect(self._on_status)
         self.engine.error.connect(self.errors.append)
 
         self._feeder = None  # set by subclasses
         self._capture: AudioCapture | None = None
         self._deadline = time.time() + timeout
+
+    def _on_status(self, text: str) -> None:
+        if text == "listening":
+            self.listening = True
+        self.statuses.append(text)
+
+    def _on_final(self, text: str) -> None:
+        self.t_final = time.time()
+        self.finals.append(text)
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -147,6 +178,29 @@ class SmokeRun:
         self.engine.stop_engine()
         self._poll_finished()
 
+    def _await_final_then_shutdown(self, grace: float) -> None:
+        """Let the engine finish any utterance (grace seconds), then stop it."""
+        started = time.time()
+
+        def check() -> None:
+            if self.t_final is not None or time.time() - started > grace:
+                self._shutdown()
+            else:
+                QTimer.singleShot(50, check)
+
+        check()
+
+    def _wait_listening(self, then) -> None:  # noqa: ANN001 - simple callback
+        """Run ``then`` once the engine reports it is listening (model loaded)."""
+        if self.listening:
+            then()
+        elif self.errors or time.time() > self._deadline:
+            print("errors:", self.errors or "(engine never became ready)")
+            print("RESULT: FAIL")
+            app.exit(1)
+        else:
+            QTimer.singleShot(50, lambda: self._wait_listening(then))
+
     # -- reporting ---------------------------------------------------------- #
 
     def _report(self) -> None:
@@ -155,6 +209,13 @@ class SmokeRun:
         if self.errors:
             print("errors:", self.errors)
         print(f"elapsed: {time.time() - self.started:.1f}s")
+        if self.measure_latency and self.t_last_audio is not None and self.t_final is not None:
+            gate = self.settings.silence_seconds
+            latency = self.t_final - self.t_last_audio
+            print(
+                f"latency (last audio -> final): {latency:.2f}s "
+                f"(gate {gate:.1f}s + transcribe ~{max(0.0, latency - gate):.2f}s)"
+            )
         print("transcript:", transcript or "(nothing)")
         ok = bool(transcript)
         if self.expect:
@@ -169,26 +230,42 @@ class SmokeRun:
 class FileRun(SmokeRun):
     """Replays a PCM buffer through the app's capture pipeline."""
 
-    def __init__(self, settings: AppSettings, pcm: bytes, rate: int, channels: int, **kw) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        pcm: bytes,
+        rate: int,
+        channels: int,
+        realtime: bool = False,
+        **kw,
+    ) -> None:
         super().__init__(
             settings,
-            label=f"file replay ({rate} Hz, {channels}ch, {len(pcm) / 2 / rate:.1f}s)",
+            label=f"file replay ({rate} Hz, {channels}ch, {len(pcm) / 2 / channels / rate:.1f}s"
+            + (", real-time)" if realtime else ")"),
             **kw,
         )
-        self._pcm = pcm
+        self._pcm = pcm + b"\x00" * int(rate * channels * 2 * 1.5)  # trailing silence
+        self._speech_bytes = len(pcm)
         self._rate = rate
         self._channels = channels
         self._offset = 0
+        self._realtime = realtime
+        self.measure_latency = realtime
         self._resampler = StreamResampler(rate, 16000)
 
     def start(self) -> None:
         self._start()
-        QTimer.singleShot(0, self._feed_block)
+        self._wait_listening(lambda: QTimer.singleShot(0, self._feed_block))
 
     def _feed_block(self) -> None:
         block_bytes = BLOCK_FRAMES * self._channels * 2
         if self._offset >= len(self._pcm):
-            QTimer.singleShot(600, self._shutdown)
+            if self.t_last_audio is None:
+                self.t_last_audio = time.time()
+            # the trailing silence triggers the natural silence-gate final;
+            # stop the engine only if it never comes (engine failure)
+            self._await_final_then_shutdown(30.0)
             return
         block = self._pcm[self._offset : self._offset + block_bytes]
         self._offset += block_bytes
@@ -196,7 +273,11 @@ class FileRun(SmokeRun):
         resampled = self._resampler.process(mono)
         if resampled.size:
             self.engine.feed(float32_to_pcm16(resampled))
-        QTimer.singleShot(2, self._feed_block)
+        if self._realtime and self._offset >= self._speech_bytes and self.t_last_audio is None:
+            self.t_last_audio = time.time()  # end of speech; silence keeps streaming
+        # one block is BLOCK_FRAMES frames of source audio (64 ms at 16 kHz)
+        interval = max(1, int(1000 * BLOCK_FRAMES / self._rate)) if self._realtime else 2
+        QTimer.singleShot(interval, self._feed_block)
 
 
 class CaptureRun(SmokeRun):
@@ -221,7 +302,9 @@ class CaptureRun(SmokeRun):
     def _stop_capture(self) -> None:
         if self._capture is not None:
             self._capture.stop_capture()
-        QTimer.singleShot(200, self._shutdown)
+        self.t_last_audio = time.time()
+        self.measure_latency = True
+        self._await_final_then_shutdown(15.0)
 
 
 def load_pcm(path: Path, rate: int, channels: int) -> tuple[bytes, int, int]:
@@ -267,7 +350,15 @@ def main() -> int:
         if not path.is_file():
             raise SystemExit(f"file not found: {path}")
         pcm, rate, channels = load_pcm(path, args.rate, args.channels)
-        run = FileRun(settings, pcm, rate, channels, expect=args.expect, timeout=args.timeout)
+        run = FileRun(
+            settings,
+            pcm,
+            rate,
+            channels,
+            realtime=args.realtime,
+            expect=args.expect,
+            timeout=args.timeout,
+        )
 
     run.start()
     return app.exec()

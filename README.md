@@ -331,6 +331,9 @@ pip install faster-whisper        # already in client/requirements.txt
 # replay an audio file (16-bit PCM; any sample rate / channel count):
 python tests/e2e/stt_smoke.py --wav speech.wav --model base.en --expect "hello"
 
+# real-time replay + latency measurement with a specific silence gate:
+python tests/e2e/stt_smoke.py --wav speech.wav --model tiny.en --realtime --silence 0.4
+
 # live capture — on Windows this records speaker output via WASAPI loopback:
 python tests/e2e/stt_smoke.py --capture 8 --source system
 
@@ -340,6 +343,26 @@ python tests/e2e/stt_smoke.py --capture 8 --source microphone --device input:3
 
 The first run downloads the model; the script exits 0 only when a transcript
 (and the `--expect` substring, if given) came back.
+
+### Latency notes
+
+Measured on an ordinary CPU (no GPU), 16 kHz input replayed in real time, an
+11-second utterance — the window from the speaker stopping to the transcript
+landing in the box:
+
+| Model | `silence_seconds=0.9` (default) | `silence_seconds=0.4` |
+|---|---|---|
+| `tiny.en` | ~1.25 s | ~0.8 s |
+| `base.en` | ~1.55 s | ~1.1 s |
+
+That window is the silence gate plus transcription (greedy decode, no VAD
+lookahead). Beyond it, the app itself adds ~20 ms between submit and the first
+streamed answer token — everything else is your LLM's own speed. With
+`auto_ask=true` (default) the question is sent the moment the transcript
+arrives; with `auto_ask=false` it waits in the box for Enter or the `ask`
+hotkey. If you want words to appear *while* the speaker is still talking (what
+the original did with Deepgram), set `stt_engine=deepgram` — that path streams
+live partials (`set_partial`) and finalises almost instantly.
 
 ### Verification status
 
