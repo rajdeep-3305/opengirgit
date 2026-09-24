@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import render as render_mod
 from . import resume as resume_mod
 from .api import ApiClient, ApiError
 from .audio import list_devices
@@ -544,7 +545,7 @@ class HistoryDialog(QDialog):
             parts.append("")
             parts.append(item.get("answer", ""))
             parts.append("")
-        self._viewer.setMarkdown("\n".join(parts))
+        render_mod.render_into(self._viewer, "\n".join(parts))
 
 
 def render_hotkey_help(settings: AppSettings) -> str:

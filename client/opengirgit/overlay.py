@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import stealth
+from . import render, stealth
 from .api import ApiClient, ApiError
 from .audio import list_devices
 from .config import AppSettings
@@ -465,10 +465,14 @@ class OverlayWindow(QWidget):
         if not self._flush_timer.isActive():
             self._flush_timer.start()
 
+    def _render_answer(self, text: str | None = None) -> None:
+        """Render the buffered answer (HTML with highlighted code when possible)."""
+        render.render_into(self._answer_view, self._answer_buffer if text is None else text)
+
     def _flush_answer(self, *, force: bool = False) -> None:
         scrollbar = self._answer_view.verticalScrollBar()
         at_bottom = scrollbar is not None and scrollbar.value() >= scrollbar.maximum() - 4
-        self._answer_view.setMarkdown(self._answer_buffer)
+        self._render_answer()
         if at_bottom and scrollbar is not None:
             scrollbar.setValue(scrollbar.maximum())
         if force:
@@ -517,7 +521,7 @@ class OverlayWindow(QWidget):
         self._flush_answer(force=True)
         self.set_status(f"error: {message}", error=True)
         if self._answer_buffer.strip():
-            self._answer_view.setMarkdown(
+            self._render_answer(
                 self._answer_buffer + f"\n\n---\n*stream interrupted: {message}*"
             )
             self._items.append(
@@ -549,7 +553,7 @@ class OverlayWindow(QWidget):
     def _show_index(self) -> None:
         item = self._items[self._index]
         self._answer_buffer = item["answer"]
-        self._answer_view.setMarkdown(self._answer_buffer)
+        self._render_answer()
         self._update_position_label()
 
     def load_items(self, items: list[dict[str, str]]) -> None:
