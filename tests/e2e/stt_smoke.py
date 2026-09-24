@@ -97,6 +97,11 @@ def parse_args() -> argparse.Namespace:
         help="replay files at real-time pace and report end-of-audio -> final latency",
     )
     parser.add_argument(
+        "--no-partials",
+        action="store_true",
+        help="disable live partial transcripts (default: enabled)",
+    )
+    parser.add_argument(
         "--expect", default="", help="require this substring (case-insensitive) in the transcript"
     )
     parser.add_argument(
@@ -113,6 +118,7 @@ def settings_from_args(args: argparse.Namespace) -> AppSettings:
         "whisper_model": args.model,
         "language": args.language,
         "silence_seconds": args.silence,
+        "partials": not args.no_partials,
     }
     if args.device:
         overrides["audio_device"] = args.device
@@ -128,6 +134,8 @@ class SmokeRun:
         self.expect = expect.lower()
         self.timeout = timeout
         self.finals: list[str] = []
+        self.partials: list[str] = []
+        self.t_first_partial: float | None = None
         self.statuses: list[str] = []
         self.errors: list[str] = []
         self.started = time.time()
@@ -138,6 +146,7 @@ class SmokeRun:
 
         self.engine = LocalWhisperEngine(settings)
         self.engine.final.connect(self._on_final)
+        self.engine.partial.connect(self._on_partial)
         self.engine.status.connect(self._on_status)
         self.engine.error.connect(self.errors.append)
 
@@ -153,6 +162,11 @@ class SmokeRun:
     def _on_final(self, text: str) -> None:
         self.t_final = time.time()
         self.finals.append(text)
+
+    def _on_partial(self, text: str) -> None:
+        if self.t_first_partial is None:
+            self.t_first_partial = time.time()
+        self.partials.append(text)
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -217,6 +231,11 @@ class SmokeRun:
                 f"(gate {gate:.1f}s + transcribe ~{max(0.0, latency - gate):.2f}s)"
             )
         print("transcript:", transcript or "(nothing)")
+        if self.partials:
+            print(f"partial updates: {len(self.partials)}")
+            print(f"last partial: {self.partials[-1]}")
+        else:
+            print("partial updates: 0" + (" (disabled)" if "--no-partials" else ""))
         ok = bool(transcript)
         if self.expect:
             ok = ok and self.expect in transcript.lower()

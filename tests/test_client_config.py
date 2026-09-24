@@ -65,6 +65,14 @@ def test_silence_seconds_default_and_clamping():
     assert AppSettings.from_dict({"silence_seconds": 99}).silence_seconds == 3.0
 
 
+def test_partials_default_and_env_override(monkeypatch):
+    assert AppSettings().partials is True
+    monkeypatch.setenv("OPENGIRGIT_PARTIALS", "0")
+    assert AppSettings().apply_env().partials is False
+    monkeypatch.setenv("OPENGIRGIT_PARTIALS", "yes")
+    assert AppSettings().apply_env().partials is True
+
+
 def test_settings_hotkeys_merge_defaults():
     settings = AppSettings.from_dict({"hotkeys": {"ask": "Ctrl+Shift+Q"}})
     assert settings.hotkeys["ask"] == "Ctrl+Shift+Q"
