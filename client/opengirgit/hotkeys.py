@@ -113,6 +113,30 @@ def parse_hotkey(spec: str) -> tuple[int, int]:
     return modifiers, vk
 
 
+def validate_hotkeys(hotkeys: dict[str, str]) -> dict[str, str]:
+    """Return ``{action: error}`` for specs that would not register.
+
+    An empty spec is valid (the hotkey is disabled). Duplicate combinations are
+    reported for the later action, since only the first one can be registered.
+    """
+    problems: dict[str, str] = {}
+    seen: dict[tuple[int, int], str] = {}
+    for action, spec in hotkeys.items():
+        spec = (spec or "").strip()
+        if not spec:
+            continue
+        try:
+            combo = parse_hotkey(spec)
+        except HotkeyError as exc:
+            problems[action] = str(exc)
+            continue
+        if combo in seen:
+            problems[action] = f"already used by '{seen[combo]}'"
+        else:
+            seen[combo] = action
+    return problems
+
+
 class GlobalHotkeyManager(QObject, QAbstractNativeEventFilter):
     """Registers system-wide hotkeys on Windows; emits ``triggered(action)``."""
 

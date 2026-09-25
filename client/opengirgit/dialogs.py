@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
@@ -32,6 +33,7 @@ from . import resume as resume_mod
 from .api import ApiClient, ApiError
 from .audio import list_devices
 from .config import DEFAULT_HOTKEYS, AppSettings
+from .hotkeys import validate_hotkeys
 from .resume import ResumeExtractionError
 from .stores import ConversationStore, ResumeCache
 from .version import APP_VERSION
@@ -427,12 +429,20 @@ class SettingsDialog(QDialog, _WorkerOwner):
         behaviour_layout.addRow("Screenshot prompt", self._screenshot_prompt)
         layout.addWidget(behaviour_box)
 
-        hotkeys_box = QGroupBox("Global hotkeys (edit ~/.opengirgit/config.json to change)")
+        hotkeys_box = QGroupBox("Global hotkeys")
         hotkey_layout = QFormLayout(hotkeys_box)
+        self._hotkey_edits: dict[str, QLineEdit] = {}
         for action, spec in sorted(settings.hotkeys.items()):
             value = QLineEdit(spec)
-            value.setReadOnly(True)
+            value.setPlaceholderText("empty = disabled")
             hotkey_layout.addRow(action.replace("_", " "), value)
+            self._hotkey_edits[action] = value
+        hint = QLabel("Format: modifiers + key, e.g. Shift+Alt+A (at least one modifier).")
+        hint.setWordWrap(True)
+        hotkey_layout.addRow(hint)
+        reset = QPushButton("Reset to defaults")
+        reset.clicked.connect(self._reset_hotkeys)
+        hotkey_layout.addRow(reset)
         layout.addWidget(hotkeys_box)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -481,7 +491,23 @@ class SettingsDialog(QDialog, _WorkerOwner):
 
         self.run_async(lambda: ApiClient.health(url), ok, lambda m: self._health.setText(f"Error: {m}"))
 
+    def _reset_hotkeys(self) -> None:
+        for action, edit in self._hotkey_edits.items():
+            edit.setText(DEFAULT_HOTKEYS.get(action, ""))
+
+    def _edited_hotkeys(self) -> dict[str, str]:
+        return {action: edit.text().strip() for action, edit in self._hotkey_edits.items()}
+
     def _save(self) -> None:
+        hotkeys = self._edited_hotkeys()
+        problems = validate_hotkeys(hotkeys)
+        if problems:
+            summary = "\n".join(f"• {action}: {message}" for action, message in sorted(problems.items()))
+            QMessageBox.warning(
+                self, "Invalid hotkeys", f"Fix these before saving:\n\n{summary}"
+            )
+            return
+
         self._working.server_url = self._server.text().strip()
         self._working.stt_engine = self._engine.currentData() or "local"
         self._working.whisper_model = self._model.currentText().strip() or "base.en"
@@ -497,6 +523,8 @@ class SettingsDialog(QDialog, _WorkerOwner):
         for key, value in self._working.to_dict().items():
             if key != "hotkeys":
                 setattr(self.settings, key, value)
+        self.settings.hotkeys.clear()
+        self.settings.hotkeys.update(hotkeys)
         self.settings.save()
         self.accept()
 

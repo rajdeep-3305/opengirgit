@@ -161,6 +161,49 @@ def test_dialogs_construct(qt_app, tmp_path):
     qt_app.processEvents()
 
 
+def test_settings_hotkey_editor(qt_app, tmp_path, monkeypatch):
+    from opengirgit import dialogs as dialogs_module
+    from opengirgit.config import DEFAULT_HOTKEYS
+
+    monkeypatch.setattr(AppSettings, "save", lambda self: None)  # never touch ~/.opengirgit
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        dialogs_module.QMessageBox,
+        "warning",
+        lambda *args, **kwargs: warnings.append(str(args[-1])),
+    )
+
+    settings = _settings(tmp_path)
+    dialog = SettingsDialog(settings)
+    assert set(dialog._hotkey_edits) == set(DEFAULT_HOTKEYS)  # noqa: SLF001
+
+    # invalid spec: warned, nothing saved
+    dialog._hotkey_edits["ask"].setText("Q")  # noqa: SLF001
+    dialog._save()  # noqa: SLF001
+    assert warnings and "ask" in warnings[-1]
+    assert settings.hotkeys["ask"] == DEFAULT_HOTKEYS["ask"]
+
+    # duplicate: warned
+    warnings.clear()
+    dialog._hotkey_edits["ask"].setText(DEFAULT_HOTKEYS["erase"])  # noqa: SLF001
+    dialog._save()  # noqa: SLF001
+    assert warnings and "erase" in warnings[-1]
+
+    # reset restores defaults
+    dialog._reset_hotkeys()  # noqa: SLF001
+    assert dialog._hotkey_edits["ask"].text() == DEFAULT_HOTKEYS["ask"]  # noqa: SLF001
+
+    # valid change: saved in place and accepted
+    dialog._hotkey_edits["ask"].setText("Ctrl+Shift+F9")  # noqa: SLF001
+    dialog._hotkey_edits["erase"].setText("")  # noqa: SLF001 - disable is allowed
+    dialog._save()  # noqa: SLF001
+    assert settings.hotkeys["ask"] == "Ctrl+Shift+F9"
+    assert settings.hotkeys["erase"] == ""
+    assert dialog.result() == dialog.DialogCode.Accepted
+    dialog.close()
+    dialog.deleteLater()
+
+
 class _ResumeCache:
     def __init__(self, tmp_path) -> None:
         self._path = tmp_path

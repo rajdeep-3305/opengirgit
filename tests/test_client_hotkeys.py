@@ -12,6 +12,7 @@ from opengirgit.hotkeys import (  # noqa: E402
     MOD_SHIFT,
     HotkeyError,
     parse_hotkey,
+    validate_hotkeys,
 )
 
 
@@ -33,3 +34,24 @@ def test_invalid_hotkeys_raise():
     for bad in ("", "A", "Shift+", "Shift+Alt+A+B", "Shift+Alt+£", "Shift+Alt"):
         with pytest.raises(HotkeyError):
             parse_hotkey(bad)
+
+
+def test_validate_hotkeys_accepts_valid_and_disabled():
+    assert validate_hotkeys({"ask": "Shift+Alt+A", "erase": ""}) == {}
+
+
+def test_validate_hotkeys_reports_bad_specs():
+    problems = validate_hotkeys({"ask": "Q"})
+    assert "ask" in problems and "modifier" in problems["ask"]
+
+
+def test_validate_hotkeys_reports_duplicates_for_later_action():
+    problems = validate_hotkeys({"ask": "Shift+Alt+A", "erase": "Shift+Alt+A"})
+    assert list(problems) == ["erase"]
+    assert "ask" in problems["erase"]
+
+
+def test_validate_hotkeys_duplicate_ignores_case_and_spacing():
+    # Both parse to the same modifiers+virtual key.
+    problems = validate_hotkeys({"ask": "shift+alt+a", "erase": " Shift+Alt+A "})
+    assert "erase" in problems
