@@ -17,7 +17,13 @@ pytest.importorskip("PySide6")
 from opengirgit.api import ApiClient  # noqa: E402
 from opengirgit.capture import RegionSelector, pixmap_to_jpeg_b64  # noqa: E402
 from opengirgit.config import AppSettings  # noqa: E402
-from opengirgit.dialogs import HistoryDialog, InfoDialog, LoginDialog, SettingsDialog  # noqa: E402
+from opengirgit.dialogs import (  # noqa: E402
+    FeedbackDialog,
+    HistoryDialog,
+    InfoDialog,
+    LoginDialog,
+    SettingsDialog,
+)
 from opengirgit.overlay import OverlayWindow  # noqa: E402
 from opengirgit.stores import ConversationStore  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
@@ -139,6 +145,7 @@ def test_dialogs_construct(qt_app, tmp_path):
     settings_dialog = SettingsDialog(settings)
     assert settings_dialog._engine.count() == 2  # noqa: SLF001
     settings_dialog._test_server()  # noqa: SLF001 - must not raise without a server
+    settings_dialog.wait_for_workers()  # the dialog must not outlive its worker thread
     settings_dialog.close()
 
     info = InfoDialog(ApiClient("http://127.0.0.1:1"), {"company": "Acme"}, _ResumeCache(tmp_path))
@@ -163,6 +170,39 @@ class _ResumeCache:
 
     def save(self, *args, **kwargs) -> None:
         return None
+
+
+class _FeedbackApi(ApiClient):
+    def __init__(self) -> None:
+        super().__init__("http://127.0.0.1:1")
+        self.sent: list[str] = []
+
+    def submit_feedback(self, message, **kwargs):  # type: ignore[override]
+        self.sent.append(message)
+        return {"success": True}
+
+
+def test_feedback_dialog_sends(qt_app):
+    api = _FeedbackApi()
+    dialog = FeedbackDialog(api, email="a@b.c")
+
+    dialog._send()  # noqa: SLF001 - empty message must not send
+    assert api.sent == []
+    assert "Write something" in dialog._status.text()  # noqa: SLF001
+
+    dialog._message.setPlainText("great tool")  # noqa: SLF001
+    dialog._send()  # noqa: SLF001
+    from PySide6.QtTest import QTest
+
+    for _ in range(100):  # run the loop until the queued worker signal arrives
+        qt_app.processEvents()
+        if "Sent" in dialog._status.text():  # noqa: SLF001
+            break
+        QTest.qWait(20)
+    assert api.sent == ["great tool"]
+    assert "Sent" in dialog._status.text()  # noqa: SLF001
+    dialog.close()
+    dialog.deleteLater()
 
 
 def test_region_selector_constructs_and_encodes(qt_app):

@@ -34,6 +34,7 @@ from .audio import list_devices
 from .config import DEFAULT_HOTKEYS, AppSettings
 from .resume import ResumeExtractionError
 from .stores import ConversationStore, ResumeCache
+from .version import APP_VERSION
 from .workers import FunctionWorker
 
 WHISPER_MODELS = ["tiny.en", "base.en", "small.en", "medium.en", "large-v3", "tiny", "base", "small"]
@@ -333,12 +334,21 @@ class InfoDialog(QDialog, _WorkerOwner):
 
 
 class SettingsDialog(QDialog, _WorkerOwner):
-    def __init__(self, settings: AppSettings, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        parent: QWidget | None = None,
+        *,
+        api: ApiClient | None = None,
+        email: str = "",
+    ) -> None:
         QDialog.__init__(self, parent)
         _WorkerOwner.__init__(self)
         self.setWindowTitle("OpenGirGit settings")
         self.setMinimumWidth(520)
         self.settings = settings
+        self._api = api
+        self._email = email
         self._working = AppSettings.from_dict(settings.to_dict())
 
         layout = QVBoxLayout(self)
@@ -427,11 +437,19 @@ class SettingsDialog(QDialog, _WorkerOwner):
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText("Save")
+        feedback_button = buttons.addButton("Send feedback…", QDialogButtonBox.ActionRole)
+        feedback_button.clicked.connect(self._open_feedback)
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
         self._refresh_devices()
+
+    # -- feedback ----------------------------------------------------------- #
+
+    def _open_feedback(self) -> None:
+        api = self._api or ApiClient(self._server.text().strip() or self.settings.server_url)
+        FeedbackDialog(api, email=self._email, parent=self).exec()
 
     # -- helpers ------------------------------------------------------------ #
 
@@ -548,6 +566,77 @@ class HistoryDialog(QDialog):
         render_mod.render_into(self._viewer, "\n".join(parts))
 
 
+# --------------------------------------------------------------------------- #
+# Feedback
+# --------------------------------------------------------------------------- #
+
+
+class FeedbackDialog(QDialog, _WorkerOwner):
+    """Send feedback to your own server (stored in its local database).
+
+    Unlike the original app, nothing here phones home to a vendor: the message
+    goes to whatever server URL is configured.
+    """
+
+    def __init__(self, api: ApiClient, email: str = "", parent: QWidget | None = None) -> None:
+        QDialog.__init__(self, parent)
+        _WorkerOwner.__init__(self)
+        self.setWindowTitle("Send feedback")
+        self.setMinimumWidth(460)
+        self._api = api
+        self._email = email
+
+        layout = QVBoxLayout(self)
+
+        caption = QLabel("Feedback is stored on your own server. Nothing goes anywhere else.")
+        caption.setWordWrap(True)
+        layout.addWidget(caption)
+
+        self._message = QPlainTextEdit()
+        self._message.setPlaceholderText("What worked, what didn't, what you'd like to see…")
+        self._message.setMinimumHeight(140)
+        layout.addWidget(self._message, 1)
+
+        self._status = QLabel("")
+        self._status.setWordWrap(True)
+        layout.addWidget(self._status)
+
+        self._buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Close)
+        self._buttons.button(QDialogButtonBox.Ok).setText("Send")
+        self._buttons.accepted.connect(self._send)
+        self._buttons.rejected.connect(self.reject)
+        layout.addWidget(self._buttons)
+
+    def done(self, result: int) -> None:  # noqa: D102
+        self.wait_for_workers()
+        super().done(result)
+
+    def _send(self) -> None:
+        message = self._message.toPlainText().strip()
+        if not message:
+            self._status.setText("Write something first.")
+            return
+        self._status.setText("Sending…")
+        send = self._buttons.button(QDialogButtonBox.Ok)
+        send.setEnabled(False)
+
+        def work() -> dict[str, Any]:
+            return self._api.submit_feedback(
+                message, email=self._email or None, app_version=APP_VERSION
+            )
+
+        def ok(_result: dict[str, Any]) -> None:
+            self._status.setText("Sent — thank you!")
+            self._message.clear()
+            send.setEnabled(True)
+
+        def failed(message_text: str) -> None:
+            self._status.setText(f"Could not send: {message_text}")
+            send.setEnabled(True)
+
+        self.run_async(work, ok, failed)
+
+
 def render_hotkey_help(settings: AppSettings) -> str:
     lines = [f"`{action}` → `{spec}`" for action, spec in sorted(settings.hotkeys.items())]
     return "\n".join(lines)
@@ -560,6 +649,7 @@ def dump_settings(settings: AppSettings) -> str:
 
 __all__ = [
     "DEFAULT_HOTKEYS",
+    "FeedbackDialog",
     "HistoryDialog",
     "InfoDialog",
     "LoginDialog",

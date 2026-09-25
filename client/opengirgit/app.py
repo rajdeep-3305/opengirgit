@@ -222,7 +222,7 @@ class AppController(QObject):
     # -------------------------------------------------------------- dialogs #
 
     def open_settings(self) -> None:
-        dialog = SettingsDialog(self._settings)
+        dialog = SettingsDialog(self._settings, api=self._api, email=self._email)
         if dialog.exec() == QDialog.Accepted:
             self._listener.stop()
             self._listener.deleteLater()
