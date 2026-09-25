@@ -117,3 +117,87 @@ def test_stt_grant_is_forwarded():
     client._request = fake_request  # type: ignore[method-assign]
     grant = client.get_stt_token()
     assert grant["token"] == "t"
+
+
+class _JsonResponse:
+    def __init__(self, payload: dict, status: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status
+
+    def json(self):
+        return self._payload
+
+
+def _no_sleep_client() -> ApiClient:
+    client = ApiClient("http://x")
+    client.retry_backoff = (0.0, 0.0, 0.0)
+    return client
+
+
+def test_send_otp_retries_transient_connect_errors(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_request(method, url, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise api_module.httpx.ConnectError("connection refused")
+        return _JsonResponse({"sent": True})
+
+    monkeypatch.setattr(api_module.httpx, "request", fake_request)
+    assert _no_sleep_client().send_otp("a@b.c") == {"sent": True}
+    assert calls["n"] == 3
+
+
+def test_send_otp_gives_up_after_backoff(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_request(*args, **kwargs):
+        calls["n"] += 1
+        raise api_module.httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(api_module.httpx, "request", fake_request)
+    with pytest.raises(ApiError, match="cannot reach"):
+        _no_sleep_client().send_otp("a@b.c")
+    assert calls["n"] == 4  # first try + 3 retries
+
+
+def test_verify_otp_is_not_retried(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_request(*args, **kwargs):
+        calls["n"] += 1
+        raise api_module.httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(api_module.httpx, "request", fake_request)
+    with pytest.raises(ApiError):
+        ApiClient("http://x").verify_otp("a@b.c", "123456")
+    assert calls["n"] == 1  # a retried verify could burn OTP attempts
+
+
+def test_http_error_response_is_never_retried(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_request(method, url, **kwargs):
+        calls["n"] += 1
+        return _JsonResponse({"detail": "rate limited"}, status=429)
+
+    monkeypatch.setattr(api_module.httpx, "request", fake_request)
+    with pytest.raises(ApiError, match="rate limited"):
+        _no_sleep_client().send_otp("a@b.c")
+    assert calls["n"] == 1
+
+
+def test_feedback_payload(monkeypatch):
+    captured: dict = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return _JsonResponse({"success": True})
+
+    monkeypatch.setattr(api_module.httpx, "request", fake_request)
+    assert ApiClient("http://x").submit_feedback("hi", email="a@b.c", app_version="9.9")
+    assert captured["method"] == "POST"
+    assert captured["url"].endswith("/api/feedback/submit")
+    assert captured["json"] == {"message": "hi", "email": "a@b.c", "app_version": "9.9"}

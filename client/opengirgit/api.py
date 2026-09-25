@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -10,6 +11,9 @@ import httpx
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
 STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=10.0)
+
+#: Delays (seconds) between retries of transient transport failures.
+DEFAULT_RETRY_BACKOFF = (0.6, 1.5, 3.0)
 
 
 class ApiError(Exception):
@@ -42,6 +46,7 @@ class ApiClient:
         self.base_url = _normalise_base_url(base_url)
         self.token = token
         self.timeout = timeout or DEFAULT_TIMEOUT
+        self.retry_backoff = DEFAULT_RETRY_BACKOFF
 
     # -- plumbing --------------------------------------------------------- #
 
@@ -58,22 +63,37 @@ class ApiClient:
         *,
         payload: dict[str, Any] | None = None,
         timeout: httpx.Timeout | float | None = None,
+        retries: int = 0,
     ) -> dict[str, Any]:
+        """One JSON round-trip; transient transport failures retried ``retries`` times.
+
+        Only connection/timeout errors are retried — HTTP responses (including
+        errors) are returned or raised immediately, so a request that reached
+        the server is never replayed.
+        """
         url = f"{self.base_url}{path}"
-        try:
-            response = httpx.request(
-                method,
-                url,
-                json=payload,
-                headers=self._headers(),
-                timeout=timeout or self.timeout,
-            )
-        except httpx.ConnectError as exc:
-            raise ApiError(f"cannot reach {self.base_url} — is the server running?") from exc
-        except httpx.TimeoutException as exc:
-            raise ApiError("the server took too long to answer") from exc
-        except httpx.HTTPError as exc:
-            raise ApiError(f"network error: {exc}") from exc
+        attempt = 0
+        while True:
+            try:
+                response = httpx.request(
+                    method,
+                    url,
+                    json=payload,
+                    headers=self._headers(),
+                    timeout=timeout or self.timeout,
+                )
+                break
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                if attempt < retries:
+                    delay = self.retry_backoff[min(attempt, len(self.retry_backoff) - 1)]
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                if isinstance(exc, httpx.TimeoutException):
+                    raise ApiError("the server took too long to answer") from exc
+                raise ApiError(f"cannot reach {self.base_url} — is the server running?") from exc
+            except httpx.HTTPError as exc:
+                raise ApiError(f"network error: {exc}") from exc
 
         if response.status_code >= 400:
             raise ApiError(_error_message(response), status_code=response.status_code)
@@ -85,7 +105,15 @@ class ApiClient:
     # -- auth ------------------------------------------------------------- #
 
     def send_otp(self, email: str) -> dict[str, Any]:
-        return self._request("POST", "/api/auth/otp/send", payload={"email": email})
+        # Mail delivery occasionally fails to accept the connection; retry
+        # transient network blips like the original client did. Only transport
+        # errors are retried — HTTP responses (including rate limits) are not.
+        return self._request(
+            "POST",
+            "/api/auth/otp/send",
+            payload={"email": email},
+            retries=len(DEFAULT_RETRY_BACKOFF),
+        )
 
     def verify_otp(self, email: str, code: str) -> dict[str, Any]:
         return self._request(
@@ -115,6 +143,20 @@ class ApiClient:
 
     def get_stt_token(self) -> dict[str, Any]:
         return self._request("POST", "/api/stt/token", timeout=DEFAULT_TIMEOUT)
+
+    def submit_feedback(
+        self,
+        message: str,
+        *,
+        email: str | None = None,
+        app_version: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/feedback/submit",
+            payload={"message": message, "email": email, "app_version": app_version},
+            retries=1,
+        )
 
     # -- streaming completions -------------------------------------------- #
 
