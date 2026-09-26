@@ -263,6 +263,34 @@ def test_region_selector_constructs_and_encodes(qt_app):
     assert encoded == "" or isinstance(encoded, str)
 
 
+def test_region_selector_decoy_cursor(qt_app):
+    from opengirgit import decoy as decoy_module
+
+    selector = RegionSelector()  # decoy on by default
+    selector.show()
+    qt_app.processEvents()
+    assert selector.cursor().shape() == Qt.BlankCursor
+    assert selector._dummy is not None  # noqa: SLF001
+    assert selector._dummy.isVisible()  # noqa: SLF001
+    assert selector._dummy.windowFlags() & Qt.WindowTransparentForInput  # noqa: SLF001
+
+    selector.close()
+    qt_app.processEvents()
+    assert not selector._dummy.isVisible()  # noqa: SLF001
+
+    plain = RegionSelector(decoy=False)
+    plain.show()
+    qt_app.processEvents()
+    assert plain.cursor().shape() == Qt.CrossCursor
+    assert plain._dummy is None  # noqa: SLF001
+    plain.close()
+
+    pixmap, hotspot = decoy_module.cursor_pixmap()
+    assert not pixmap.isNull()
+    assert pixmap.width() > 0 and pixmap.height() > 0
+    assert isinstance(hotspot.x(), int)
+
+
 def _png_b64(width: int = 6, height: int = 4) -> str:
     source = QPixmap(width, height)
     source.fill(Qt.red)

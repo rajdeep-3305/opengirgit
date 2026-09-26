@@ -171,7 +171,7 @@ class AppController(QObject):
     # ------------------------------------------------------------ screenshot #
 
     def take_screenshot(self) -> None:
-        self._selector = RegionSelector()
+        self._selector = RegionSelector(decoy=self._settings.decoy_cursor)
         self._selector.region_selected.connect(self._on_region_selected)
         self._selector.showFullScreen()
         self._selector.raise_()
