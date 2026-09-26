@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from . import render, stealth
 from .api import ApiClient, ApiError
 from .audio import list_devices
+from .capture import pixmap_from_b64
 from .config import AppSettings
 from .stores import ConversationStore
 from .workers import StreamWorker
@@ -30,6 +31,8 @@ STREAM_FLUSH_MS = 120
 MOVE_STEP = 24
 SCROLL_STEP = 80
 OPACITY_STEP = 0.05
+THUMBNAIL_HEIGHT = 56
+MAX_THUMBNAILS = 3
 
 CODE_LANGUAGES = [
     "auto",
@@ -239,6 +242,13 @@ class OverlayWindow(QWidget):
         header.addWidget(self._position_label)
         answer_layout.addLayout(header)
 
+        # -- screenshot thumbnails (shown while/after a vision answer) ------ #
+        self._attachment_row = QHBoxLayout()
+        self._attachment_row.setSpacing(6)
+        self._attachment_row.addStretch(1)
+        self._attachment_widgets: list[QWidget] = []
+        answer_layout.addLayout(self._attachment_row)
+
         self._answer_view = QTextBrowser()
         self._answer_view.setOpenExternalLinks(True)
         self._answer_view.setMinimumHeight(150)
@@ -365,6 +375,7 @@ class OverlayWindow(QWidget):
     def erase(self) -> None:
         self._stt_input.clear()
         self._manual_input.clear()
+        self._clear_attachments()
         self._answer_buffer = ""
         self._answer_view.clear()
         self.set_status("erased")
@@ -377,10 +388,38 @@ class OverlayWindow(QWidget):
 
     # ------------------------------------------------------------ submission #
 
+    def _clear_attachments(self) -> None:
+        for widget in self._attachment_widgets:
+            widget.setParent(None)
+            widget.deleteLater()
+        self._attachment_widgets.clear()
+
+    def _set_attachments(self, images_b64: list[str]) -> None:
+        """Show small previews of the screenshots sent with a vision request."""
+        self._clear_attachments()
+        shown = 0
+        for index, encoded in enumerate(images_b64[:MAX_THUMBNAILS]):
+            pixmap = pixmap_from_b64(encoded)
+            if pixmap.isNull():
+                continue
+            label = QLabel()
+            label.setPixmap(pixmap.scaledToHeight(THUMBNAIL_HEIGHT, Qt.SmoothTransformation))
+            label.setToolTip(f"screenshot {index + 1}")
+            self._attachment_row.insertWidget(self._attachment_row.count() - 1, label)
+            self._attachment_widgets.append(label)
+            shown += 1
+        hidden = len(images_b64) - shown
+        if shown and hidden > 0:
+            more = QLabel(f"+{hidden} more")
+            more.setObjectName("status")
+            self._attachment_row.insertWidget(self._attachment_row.count() - 1, more)
+            self._attachment_widgets.append(more)
+
     def submit_question(self, question: str, *, kind: str = "chat") -> None:
         question = question.strip()
         if not question:
             return
+        self._clear_attachments()
 
         language = self._language_combo.currentText()
         if language != "auto" and kind == "chat":
@@ -411,6 +450,7 @@ class OverlayWindow(QWidget):
         if not images_b64:
             self.set_status("no image captured", error=True)
             return
+        self._set_attachments(images_b64)
         history = self._conversation_payload()
         self.cancel_stream()
         self._pending = {"question": f"[screenshot] {prompt}", "kind": "vision"}

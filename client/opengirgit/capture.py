@@ -143,3 +143,17 @@ def pixmap_to_jpeg_b64(pixmap: QPixmap, quality: int = 85) -> str:
     finally:
         buffer.close()
     return base64.b64encode(data).decode("ascii")
+
+
+def pixmap_from_b64(encoded: str) -> QPixmap:
+    """Decode a base64 image (JPEG/PNG/…) into a QPixmap; null when invalid."""
+    if not encoded:
+        return QPixmap()
+    try:
+        raw = base64.b64decode(encoded)
+    except ValueError:  # includes binascii.Error
+        return QPixmap()
+    pixmap = QPixmap()
+    if not raw or not pixmap.loadFromData(raw):
+        return QPixmap()
+    return pixmap

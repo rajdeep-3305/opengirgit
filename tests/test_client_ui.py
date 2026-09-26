@@ -6,6 +6,7 @@ display server.
 
 from __future__ import annotations
 
+import base64
 import os
 
 import pytest
@@ -15,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from opengirgit.api import ApiClient  # noqa: E402
-from opengirgit.capture import RegionSelector, pixmap_to_jpeg_b64  # noqa: E402
+from opengirgit.capture import RegionSelector, pixmap_from_b64, pixmap_to_jpeg_b64  # noqa: E402
 from opengirgit.config import AppSettings  # noqa: E402
 from opengirgit.dialogs import (  # noqa: E402
     FeedbackDialog,
@@ -26,7 +27,8 @@ from opengirgit.dialogs import (  # noqa: E402
 )
 from opengirgit.overlay import OverlayWindow  # noqa: E402
 from opengirgit.stores import ConversationStore  # noqa: E402
-from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtCore import QBuffer, Qt  # noqa: E402
+from PySide6.QtGui import QGuiApplication, QPixmap  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 
@@ -259,6 +261,42 @@ def test_region_selector_constructs_and_encodes(qt_app):
     pixmap = screen.grabWindow(0, 0, 0, 40, 30)
     encoded = pixmap_to_jpeg_b64(pixmap)
     assert encoded == "" or isinstance(encoded, str)
+
+
+def _png_b64(width: int = 6, height: int = 4) -> str:
+    source = QPixmap(width, height)
+    source.fill(Qt.red)
+    buffer = QBuffer()
+    buffer.open(QBuffer.WriteOnly)
+    assert source.save(buffer, "PNG")
+    return base64.b64encode(bytes(buffer.data())).decode("ascii")
+
+
+def test_pixmap_from_b64_roundtrip(qt_app):
+    pixmap = pixmap_from_b64(_png_b64(5, 7))
+    assert not pixmap.isNull()
+    assert (pixmap.width(), pixmap.height()) == (5, 7)
+    assert pixmap_from_b64("").isNull()
+    assert pixmap_from_b64("!!!not-base64!!!").isNull()
+    assert pixmap_from_b64("aGVsbG8=").isNull()  # valid base64, not an image
+
+
+def test_overlay_shows_screenshot_thumbnails(qt_app, tmp_path):
+    overlay = OverlayWindow(_StubApi(), _settings(tmp_path), ConversationStore(), lambda: "")
+    encoded = _png_b64()
+
+    overlay._set_attachments([encoded])  # noqa: SLF001
+    assert len(overlay._attachment_widgets) == 1  # noqa: SLF001
+    assert overlay._attachment_widgets[0].pixmap().height() == 56  # noqa: SLF001
+
+    overlay._set_attachments([encoded] * 5)  # noqa: SLF001
+    assert len(overlay._attachment_widgets) == 4  # 3 thumbs + "+2 more"  # noqa: SLF001
+    assert "2 more" in overlay._attachment_widgets[-1].text()  # noqa: SLF001
+
+    overlay.erase()
+    assert overlay._attachment_widgets == []  # noqa: SLF001
+    overlay.close()
+    overlay.deleteLater()
 
 
 def test_app_controller_wiring(qt_app, tmp_path, monkeypatch):
