@@ -1,0 +1,61 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  windows-bundle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r client/requirements.txt -r server/requirements.txt pyinstaller
+
+      - name: Build bundle
+        run: pyinstaller packaging/opengirgit.spec --noconfirm --distpath dist --workpath build
+
+      - name: Smoke test (bundled server becomes healthy, client starts headless)
+        shell: pwsh
+        run: |
+          $env:PORT = "8123"
+          $env:QT_QPA_PLATFORM = "offscreen"   # client runs without a visible window
+          $p = Start-Process -FilePath "dist\OpenGirGit\OpenGirGit.exe" -PassThru -NoNewWindow
+          $ok = $false
+          foreach ($i in 1..90) {
+            if ($p.HasExited) { throw "OpenGirGit.exe exited early ($($p.ExitCode))" }
+            try {
+              Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8123/api/health" -TimeoutSec 2 | Out-Null
+              $ok = $true
+              break
+            } catch {
+              Start-Sleep -Milliseconds 500
+            }
+          }
+          if (-not $ok) { throw "bundled API server did not become healthy" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "smoke test passed"
+
+      - name: Zip
+        run: Compress-Archive -Path dist/OpenGirGit -DestinationPath dist/OpenGirGit-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenGirGit-windows-x64
+          path: dist/OpenGirGit-windows-x64.zip
+          if-no-files-found: error
+
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/OpenGirGit-windows-x64.zip
+          generate_release_notes: true
