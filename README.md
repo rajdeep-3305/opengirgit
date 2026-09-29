@@ -31,14 +31,15 @@ billing** — you run your own server, plug in your own model, and pay nobody.
 - [What is *not* in this repo](#what-is-not-in-this-repo)
 - [Repository layout](#repository-layout)
 - [Quick start](#quick-start)
-  - [1. Server](#1-server)
-  - [2. Client](#2-client)
+  - [One command (recommended)](#one-command-recommended)
+  - [Manual setup](#manual-setup)
 - [Configuration](#configuration)
   - [Server environment](#server-environment)
   - [Client settings](#client-settings)
 - [Global hotkeys](#global-hotkeys)
 - [Privacy and stealth notes](#privacy-and-stealth-notes)
 - [Relationship to the original app](#relationship-to-the-original-app)
+  - [How OpenGirGit compares today](#how-opengirgit-compares-today)
 - [Development](#development)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -50,14 +51,16 @@ billing** — you run your own server, plug in your own model, and pay nobody.
 | Area | What OpenGirGit does |
 |---|---|
 | **Speech input** | Captures **system audio loopback** (the interviewer's voice in Zoom/Meet/Teams — Windows/WASAPI) or a regular microphone (any OS), resamples to 16 kHz mono. |
-| **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. |
-| **Answers** | SSE streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…). Answers render as streaming Markdown. |
-| **Vision** | Hotkey → select a screen region → the screenshot is sent to a vision-capable model (e.g. "solve the coding problem on screen"). |
+| **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. The local engine also fills the box **while the speaker is talking** (re-transcribes every ~1.2 s, with adaptive back-off on slow machines). |
+| **Answers** | SSE streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…). Answers render as streaming Markdown with **syntax-highlighted code blocks** and tables (Pygments). |
+| **Vision** | Hotkey → select a screen region → the screenshot (with a thumbnail preview in the panel) is sent to a vision-capable model (e.g. "solve the coding problem on screen"). |
 | **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. |
 | **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog, navigable with hotkeys. |
 | **Overlay UX** | Frameless, always-on-top, translucent, draggable bar; collapsible answer panel; opacity and move hotkeys; resize grip. |
-| **Stealth** | On Windows the windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab — the same documented Win32 calls the original uses. |
+| **Hotkeys** | 14 global actions, editable **in the settings dialog** (empty value disables one) with validation. |
+| **Stealth** | On Windows the windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab. During region selection the real cursor is blanked and a stand-in copy stays parked at the anchor, so a screen share sees an ordinary motionless cursor. |
 | **Auth** | Local email-OTP accounts issued by your own server (SMTP optional — dev mode prints the code). |
+| **Packaging** | `run.sh` / `run.ps1` bootstrap everything with one command; a PyInstaller **one-folder Windows build** (client + server in one exe) is produced by CI on release tags. |
 | **Zero billing** | There is no payment code, no minute accounting and no phone-home anywhere in this repository. |
 
 ## What is *not* in this repo
@@ -78,8 +81,13 @@ opengirgit/
 ├── README.md                  ← you are here
 ├── REPORT.md                  ← reverse-engineering report of the original app
 ├── LICENSE                    ← MIT
+├── run.sh / run.ps1           ← one-command launcher (venv + deps + server + client)
 ├── docs/
 │   └── API.md                 ← HTTP/SSE API reference implemented by server/
+├── packaging/                 ← PyInstaller spec + frozen entry point
+│   ├── opengirgit.spec
+│   ├── launcher.py            ← starts bundled server, then the client
+│   └── README.md
 ├── server/                    ← FastAPI backend (auth, LLM proxy, STT tokens)
 │   ├── app/
 │   │   ├── main.py            ← routes
@@ -96,16 +104,18 @@ opengirgit/
 ├── client/                    ← PySide6 desktop overlay
 │   ├── opengirgit/
 │   │   ├── app.py             ← bootstrap & wiring
-│   │   ├── overlay.py         ← the overlay window
-│   │   ├── dialogs.py         ← login / interview info / settings / history
-│   │   ├── api.py             ← HTTP client (auth, SSE chat/vision, STT token)
+│   │   ├── overlay.py         ← the overlay window (answers, thumbnails)
+│   │   ├── dialogs.py         ← login / info / settings / history / feedback
+│   │   ├── api.py             ← HTTP client (auth, SSE chat/vision, retries)
 │   │   ├── workers.py         ← QThread helpers
 │   │   ├── audio.py           ← WASAPI loopback / mic capture
 │   │   ├── dsp.py             ← downmix + linear resampler (pure numpy)
-│   │   ├── stt.py             ← local faster-whisper & Deepgram engines
-│   │   ├── capture.py         ← screen region selection
+│   │   ├── stt.py             ← local faster-whisper (with partials) & Deepgram
+│   │   ├── capture.py         ← screen region selection + decoy cursor
+│   │   ├── decoy.py           ← share-safe cursor (GDI bitmap / drawn arrow)
+│   │   ├── render.py          ← markdown → HTML with highlighted code
 │   │   ├── stealth.py         ← WDA_EXCLUDEFROMCAPTURE / tool-window
-│   │   ├── hotkeys.py         ← global hotkeys (Win32 RegisterHotKey)
+│   │   ├── hotkeys.py         ← global hotkeys + validation
 │   │   ├── prompts.py         ← context formatting
 │   │   ├── resume.py          ← PDF/DOCX/TXT text extraction
 │   │   ├── stores.py          ← ~/.opengirgit JSON stores
@@ -115,7 +125,7 @@ opengirgit/
 │   └── .env.example
 ├── tests/                     ← offline unit tests (server units + client units)
 │   └── e2e/                   ← mock OpenAI-compatible model + end-to-end script
-└── .github/workflows/ci.yml   ← lint + tests + e2e
+└── .github/workflows/         ← ci.yml (lint/tests/e2e) + release.yml (Windows bundle)
 ```
 
 ## Quick start
@@ -124,7 +134,29 @@ Requirements: Python **3.10+** (3.11–3.13 recommended). Windows is required fo
 *system-audio* capture and the stealth APIs; on Linux/macOS the app still runs
 with microphone input (and without capture exclusion).
 
-### 1. Server
+### One command (recommended)
+
+```bash
+./run.sh                 # Linux/macOS: venv + deps + server + client
+./run.sh --check         # validate prerequisites only
+```
+
+```powershell
+.\run.ps1                # Windows PowerShell, same thing
+```
+
+The script creates a shared `.venv`, installs everything (once; re-runs are
+instant), starts the API server, waits for `/api/health`, then opens the client.
+`HOST`, `PORT`, `PYTHON` and `OPENGIRGIT_SERVER_URL` override the defaults;
+`--no-server` / `--no-client` run only one half.
+
+Prebuilt Windows bundles (one folder, client + server, no Python needed) are
+attached to GitHub releases by CI — see [`packaging/`](packaging/README.md) for
+building your own.
+
+### Manual setup
+
+#### 1. Server
 
 ```bash
 cd server
@@ -160,7 +192,7 @@ Health check: `curl http://127.0.0.1:8000/api/health`
 > automatically). Set `SMTP_HOST` … to send real email, or set
 > `ALLOW_DEV_OTP_ECHO=false` to disable the echo.
 
-### 2. Client
+#### 2. Client
 
 ```bash
 cd client
@@ -227,9 +259,11 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `audio_source` | `system` | `system` (loopback) or `microphone`. |
 | `audio_device` | *(auto)* | Device id from the dropdown; empty selects the default. |
 | `auto_ask` | `true` | Submit a question automatically when a final transcript arrives. |
+| `partials` | `true` | Live partial transcripts while the local engine is transcribing. |
+| `decoy_cursor` | `true` | Hide the real cursor during region selection (see stealth notes). |
 | `opacity` | `0.96` | Overlay opacity. |
 | `screenshot_prompt` | built-in | Prompt used for screenshot analysis. |
-| `hotkeys` | see below | Hotkey combos as `"Shift+Alt+K"` strings; shown read-only in the settings dialog — edit `~/.opengirgit/config.json` to change them. |
+| `hotkeys` | see below | Hotkey combos as `"Shift+Alt+K"` strings; editable in the settings dialog (an empty value disables a hotkey). |
 
 Files written by the client: `~/.opengirgit/{config,credentials,context,conversations,resume_cache}.json`.
 `credentials.json` is plaintext and contains a bearer token — keep it out of
@@ -237,7 +271,7 @@ version control (the repository `.gitignore` already ignores it).
 
 ## Global hotkeys
 
-Defaults (all remappable in `config.json` / the settings dialog; on Windows they
+Defaults (all remappable in the settings dialog or `config.json`; on Windows they
 are true system-wide hotkeys registered with `RegisterHotKey`, elsewhere they are
 application shortcuts):
 
@@ -264,6 +298,12 @@ application shortcuts):
   `WS_EX_TOOLWINDOW` so it stays out of the taskbar and Alt-Tab. On Windows
   builds older than 19041 the flag degrades and the window appears as a black
   rectangle in shares — the same caveat the original has.
+* **Decoy cursor (`decoy_cursor=true`).** While you drag the screenshot region,
+  the real pointer is blanked on the selection overlay and a stand-in copy
+  (the actual system cursor bitmap on Windows, read via GDI) stays parked at
+  the button you pressed, so a screen share sees a normal, motionless cursor
+  instead of a crosshair sweeping the screen; when you finish, the real cursor
+  is glided back to the anchor.
 * **Ethics.** You are responsible for complying with the rules of whatever
   interview, exam or call you use this in. Many employers and testing platforms
   forbid assistive tooling; nothing in this repository is designed to defeat
@@ -286,13 +326,48 @@ recurring subscription and no 5-minute billing unit anywhere in the binaries —
 "5 minutes" only ever matches the "₹5/min" rate. OpenGirGit removes this layer
 entirely: your server bills nothing.
 
+### How OpenGirGit compares today
+
+**Ahead of the original**
+
+* **Cost** — ₹0 forever; the original debits ₹5/min from a prepaid balance.
+* **Privacy** — local STT and, optionally, a local LLM; the original always
+  routes audio to Deepgram and every question to its own backend. No telemetry,
+  file logs, feedback pings or auto-updates here.
+* **Offline and longevity** — fully offline with Ollama + faster-whisper; the
+  original stops working when `girgit-ai.com` does.
+* **Openness** — MIT, auditable, forkable; no trial timer, device binding or
+  vendor lock-in, and you choose the model.
+
+**Roughly at parity**
+
+* Core flow (overlay, 14 hotkeys, capture exclusion, loopback capture,
+  screenshot→vision, resume/JD context, streaming answers, history), live
+  partial transcripts, decoy cursor during selection, editable hotkeys.
+* Latency when configured equivalently (Deepgram + cloud LLM): the plumbing
+  adds ~20 ms end-to-end (see measurements below).
+
+**Where the original is still ahead**
+
+* Rendering of **math and diagrams**: its embedded web view renders LaTeX/KaTeX
+  and mermaid; here code is syntax-highlighted but math/diagrams do not render.
+* **Zero-setup distribution** for non-technical users on Windows: an installer
+  vs. `run.ps1` / the CI-built PyInstaller folder.
+* **Small conveniences** not rebuilt yet: selecting several screenshot regions
+  for one question, pixel-level UI polish.
+* **Default answer quality** depends on the model you point it at; there is no
+  vendor-tuned default stack.
+
+Nothing here claims superior transcription or answer quality — those follow
+from the engine and model you configure.
+
 ## Development
 
 ```bash
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 50 offline tests, no network needed
+pytest                                    # 72 offline tests, no network needed
 ruff check server client tests
 ```
 
@@ -304,11 +379,12 @@ Test layout:
 | `tests/test_server_security.py` | OTP hashing, JWT issue/verify/expiry/refresh leeway |
 | `tests/test_server_resume.py` | JSON extraction + normalisation of parsed resumes |
 | `tests/test_client_dsp.py` | down-mix, resampling (single-pass == chunked), levels |
-| `tests/test_client_config.py` | settings defaults, clamping, context formatting |
+| `tests/test_client_config.py` | settings defaults, clamping, env overrides, context formatting |
 | `tests/test_client_stores.py` | bounded history, atomic writes, credential fallback |
-| `tests/test_client_hotkeys.py` | hotkey string parsing (skipped without PySide6) |
-| `tests/test_client_api.py` | SSE assembly, error events, cancellation, URL handling |
-| `tests/test_client_ui.py` | headless (offscreen) construction + stream + wiring + teardown |
+| `tests/test_client_hotkeys.py` | hotkey parsing + editor validation (skipped without PySide6) |
+| `tests/test_client_api.py` | SSE assembly, error events, cancellation, retry policy, URLs |
+| `tests/test_client_render.py` | markdown→HTML rendering, pygments highlighting, fallback |
+| `tests/test_client_ui.py` | headless (offscreen) construction, streaming, thumbnails, decoy cursor, dialogs |
 | `tests/e2e/run_e2e.py` | boots the real server + mock model and drives the client HTTP layer |
 | `tests/e2e/stt_smoke.py` | optional live STT check (file replay or live capture, needs faster-whisper) |
 
@@ -360,18 +436,27 @@ lookahead). Beyond it, the app itself adds ~20 ms between submit and the first
 streamed answer token — everything else is your LLM's own speed. With
 `auto_ask=true` (default) the question is sent the moment the transcript
 arrives; with `auto_ask=false` it waits in the box for Enter or the `ask`
-hotkey. If you want words to appear *while* the speaker is still talking (what
-the original did with Deepgram), set `stt_engine=deepgram` — that path streams
-live partials (`set_partial`) and finalises almost instantly.
+hotkey. With the default local engine the box also fills **while the speaker is
+still talking** (re-transcription every ~1.2 s, automatically throttled on slow
+machines; disable with `partials=false`). Deepgram remains the word-level
+lowest-latency option.
 
 ### Verification status
 
 | Area | Verification |
 |---|---|
 | Server (auth, profiles, SSE chat/vision, resume, limits) | ✅ unit tests + live HTTP smoke + `run_e2e.py` |
-| Client HTTP (auth, chat, vision, resume, error paths) | ✅ live against the real server and the mock model |
+| Client HTTP (auth, chat, vision, resume, error paths, retries) | ✅ live against the real server and the mock model; retry semantics unit-tested |
 | DSP chain (down-mix → resample → PCM16) | ✅ unit tests + real audio replay |
 | Local STT (faster-whisper) | ✅ real speech clip transcribed word-perfect via `stt_smoke.py`, both 16 kHz mono and 48 kHz stereo through the capture chain |
+| Live partials (local engine) | ✅ real speech clip, real-time replay: 9 partial updates during an 11 s utterance |
+| Answer rendering (pygments highlighting, tables, fallback) | ✅ unit tests + offscreen render |
+| Screenshot thumbnails | ✅ offscreen UI tests |
+| Decoy cursor (region selection) | ✅ blank/dummy/glide logic + pixmap fallback offscreen; ⏳ GDI bitmap and share appearance on Windows |
+| Hotkey editor | ✅ validation + save flow offscreen; registration path unchanged |
+| Feedback dialog | ✅ payload test + offscreen send flow |
+| One-command launchers | ✅ `run.sh`: real venv check, server start, health wait, clean shutdown; ⏳ `run.ps1` on Windows |
+| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec (server healthy from the exe); ⏳ Windows exe from CI on a release tag |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
 | WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
 | Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 14 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
@@ -382,8 +467,11 @@ live partials (`set_partial`) and finalises almost instantly.
 
 ## Roadmap
 
+- [x] Streaming partial transcripts from local whisper (chunked re-transcription).
+- [ ] Math (LaTeX) and mermaid rendering — needs a small web view or an image renderer; decision pending.
+- [ ] Multi-region screenshots (send several selections with one question; the API already takes a list).
+- [ ] Verify and iterate the Windows PyInstaller bundle on real hardware (CI builds it on tags).
 - [ ] macOS audio capture (`ScreenCaptureKit`/BlackHole docs) and Linux PipeWire loopback helper.
-- [ ] Streaming partial transcripts from local whisper (chunked re-transcription).
 - [ ] Optional WebSocket chat transport (the server already speaks SSE; WS is a drop-in).
 - [ ] Session recording/export to Markdown.
 - [ ] Translations (the strings are all in `client/opengirgit/`, no i18n layer yet).
