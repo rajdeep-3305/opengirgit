@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
@@ -32,7 +33,8 @@ MOVE_STEP = 24
 SCROLL_STEP = 80
 OPACITY_STEP = 0.05
 THUMBNAIL_HEIGHT = 56
-MAX_THUMBNAILS = 3
+MAX_CAPTURES = 5  # the server accepts at most 5 images per vision request
+WEB_FLUSH_INTERVAL = 0.35  # seconds; throttles web-view renders while streaming
 
 CODE_LANGUAGES = [
     "auto",
@@ -70,7 +72,34 @@ QTextBrowser { background: rgba(26, 26, 26, 235); color: #f2f2f2; border: 1px so
                border-radius: 6px; padding: 8px; }
 QScrollBar:vertical { background: #1a1a1a; width: 10px; border-radius: 5px; }
 QScrollBar::handle:vertical { background: #555555; border-radius: 5px; min-height: 24px; }
+QPushButton#thumb_remove { background: rgba(24, 24, 24, 220); color: #ff9b9b; border: 1px solid #5a5a5a;
+                           border-radius: 8px; padding: 0px; font-size: 10px; }
+QPushButton#thumb_remove:hover { background: #7a2b2b; color: #ffffff; }
 """
+
+
+class _PendingThumb(QWidget):
+    """One queued screenshot with a small remove button."""
+
+    remove_requested = Signal(str)
+
+    def __init__(self, encoded: str, index: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._encoded = encoded
+        size = THUMBNAIL_HEIGHT + 8
+        self.setFixedSize(size, size)
+        label = QLabel(self)
+        label.setPixmap(
+            pixmap_from_b64(encoded).scaledToHeight(THUMBNAIL_HEIGHT, Qt.SmoothTransformation)
+        )
+        label.move(4, 4)
+        label.setToolTip(f"screenshot {index + 1} — sent with your next question")
+        remove = QPushButton("\u2715", self)
+        remove.setObjectName("thumb_remove")
+        remove.setFixedSize(16, 16)
+        remove.move(size - 18, 2)
+        remove.setToolTip("remove this screenshot")
+        remove.clicked.connect(lambda: self.remove_requested.emit(self._encoded))
 
 
 class OverlayWindow(QWidget):
@@ -116,6 +145,16 @@ class OverlayWindow(QWidget):
         self._last_auto_question = ""
         self._last_auto_time = 0.0
         self._drag_offset: QPoint | None = None
+
+        # Screenshots queue up and attach to the next question (like the original).
+        self._pending_images: list[str] = []
+        self._pending_widgets: list[_PendingThumb] = []
+
+        # Math/mermaid rendering uses a lazily-created QtWebEngine view.
+        self._web_view = None
+        self._web_failed = False
+        self._web_visible = False
+        self._last_web_render = 0.0
 
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(STREAM_FLUSH_MS)
@@ -200,7 +239,7 @@ class OverlayWindow(QWidget):
         row2.addWidget(self._manual_input, 3)
 
         for text, tip, slot in (
-            ("📷", "Screenshot region → analyse", self.screenshot_requested.emit),
+            ("📷", "Screenshot a region (repeat to attach several)", self.screenshot_requested.emit),
             ("⌫", "Erase inputs and answer", self.erase),
             ("−", "Opacity down", lambda: self.nudge_opacity(-OPACITY_STEP)),
             ("+", "Opacity up", lambda: self.nudge_opacity(OPACITY_STEP)),
@@ -242,7 +281,7 @@ class OverlayWindow(QWidget):
         header.addWidget(self._position_label)
         answer_layout.addLayout(header)
 
-        # -- screenshot thumbnails (shown while/after a vision answer) ------ #
+        # -- screenshot thumbnails (queued captures / sent with an answer) -- #
         self._attachment_row = QHBoxLayout()
         self._attachment_row.setSpacing(6)
         self._attachment_row.addStretch(1)
@@ -253,6 +292,8 @@ class OverlayWindow(QWidget):
         self._answer_view.setOpenExternalLinks(True)
         self._answer_view.setMinimumHeight(150)
         answer_layout.addWidget(self._answer_view, 1)
+        self._answer_layout = answer_layout
+        self._answer_view_index = answer_layout.indexOf(self._answer_view)
 
         grip_row = QHBoxLayout()
         grip_row.addStretch(1)
@@ -361,23 +402,20 @@ class OverlayWindow(QWidget):
 
     def _submit_stt_box(self) -> None:
         question = self._stt_input.text().strip()
-        if not question:
+        if not question and not self._pending_images:
             return
         self._stt_input.clear()
         self.submit_question(question, kind="chat")
 
     def submit_manual(self) -> None:
-        question = self._manual_input.text().strip()
-        if not question:
-            return
-        self.submit_question(question, kind="chat")
+        self.submit_question(self._manual_input.text(), kind="chat")
 
     def erase(self) -> None:
         self._stt_input.clear()
         self._manual_input.clear()
         self._clear_attachments()
-        self._answer_buffer = ""
-        self._answer_view.clear()
+        self._clear_pending()
+        self._reset_answer_panel()
         self.set_status("erased")
 
     def _copy_answer(self) -> None:
@@ -385,6 +423,53 @@ class OverlayWindow(QWidget):
         if clipboard is not None and self._answer_buffer:
             clipboard.setText(self._answer_buffer)
             self.set_status("answer copied")
+
+    # ------------------------------------------------------------- captures #
+
+    def add_capture(self, encoded: str) -> bool:
+        """Queue a screenshot; it is attached to the next question asked."""
+        if len(self._pending_images) >= MAX_CAPTURES:
+            self.set_status(f"maximum {MAX_CAPTURES} screenshots per question", error=True)
+            return False
+        if not self._pending_images:
+            self._clear_attachments()  # a new question starts; drop the old previews
+        self._pending_images.append(encoded)
+        self._rebuild_pending_row()
+        count = len(self._pending_images)
+        word = "screenshot" if count == 1 else "screenshots"
+        self.set_status(f"{count} {word} ready — Ask/Enter sends, 📷 adds another")
+        return True
+
+    def _rebuild_pending_row(self) -> None:
+        for widget in self._pending_widgets:
+            widget.setParent(None)
+            widget.deleteLater()
+        self._pending_widgets.clear()
+        for index, encoded in enumerate(self._pending_images):
+            thumb = _PendingThumb(encoded, index, self._answer_panel)
+            thumb.remove_requested.connect(self._remove_capture)
+            self._attachment_row.insertWidget(self._attachment_row.count() - 1, thumb)
+            self._pending_widgets.append(thumb)
+
+    def _remove_capture(self, encoded: str) -> None:
+        if encoded in self._pending_images:
+            self._pending_images.remove(encoded)
+        self._rebuild_pending_row()
+        count = len(self._pending_images)
+        if count:
+            word = "screenshot" if count == 1 else "screenshots"
+            self.set_status(f"{count} {word} ready")
+        else:
+            self.set_status("screenshots cleared")
+
+    def _clear_pending(self) -> None:
+        self._pending_images = []
+        self._rebuild_pending_row()
+
+    def _take_pending_images(self) -> list[str]:
+        images = list(self._pending_images)
+        self._clear_pending()
+        return images
 
     # ------------------------------------------------------------ submission #
 
@@ -398,7 +483,7 @@ class OverlayWindow(QWidget):
         """Show small previews of the screenshots sent with a vision request."""
         self._clear_attachments()
         shown = 0
-        for index, encoded in enumerate(images_b64[:MAX_THUMBNAILS]):
+        for index, encoded in enumerate(images_b64[:MAX_CAPTURES]):
             pixmap = pixmap_from_b64(encoded)
             if pixmap.isNull():
                 continue
@@ -416,8 +501,13 @@ class OverlayWindow(QWidget):
             self._attachment_widgets.append(more)
 
     def submit_question(self, question: str, *, kind: str = "chat") -> None:
+        """Ask a question; queued screenshots ride along as a vision request."""
         question = question.strip()
-        if not question:
+        images = self._take_pending_images()
+        if not question and not images:
+            return
+        if images:
+            self.submit_vision(question or self._settings.screenshot_prompt, images)
             return
         self._clear_attachments()
 
@@ -430,8 +520,7 @@ class OverlayWindow(QWidget):
         history = self._conversation_payload()
         self.cancel_stream()
         self._pending = {"question": question, "kind": "chat"}
-        self._answer_buffer = ""
-        self._answer_view.clear()
+        self._reset_answer_panel()
         self._streaming = True
         self.set_status("asking…")
 
@@ -450,12 +539,12 @@ class OverlayWindow(QWidget):
         if not images_b64:
             self.set_status("no image captured", error=True)
             return
+        prompt = prompt.strip() or self._settings.screenshot_prompt
         self._set_attachments(images_b64)
         history = self._conversation_payload()
         self.cancel_stream()
-        self._pending = {"question": f"[screenshot] {prompt}", "kind": "vision"}
-        self._answer_buffer = ""
-        self._answer_view.clear()
+        self._pending = {"question": f"[{len(images_b64)} screenshot(s)] {prompt}", "kind": "vision"}
+        self._reset_answer_panel()
         self._streaming = True
         self.set_status("analysing screenshot…")
 
@@ -505,15 +594,86 @@ class OverlayWindow(QWidget):
         if not self._flush_timer.isActive():
             self._flush_timer.start()
 
-    def _render_answer(self, text: str | None = None) -> None:
-        """Render the buffered answer (HTML with highlighted code when possible)."""
-        render.render_into(self._answer_view, self._answer_buffer if text is None else text)
+    def _render_answer(self, text: str | None = None, *, force: bool = False) -> None:
+        """Render the buffered answer; math/mermaid answers use the web view."""
+        payload = self._answer_buffer if text is None else text
+        if self._should_render_web(payload):
+            view = self._ensure_web_view()
+            if view is not None:
+                if not view.is_ready():
+                    # The embedded browser is still loading its bundled assets.
+                    # Keep the plain renderer visible (it re-renders when the
+                    # page reports ready) and hand the fragment over meanwhile.
+                    render.render_into_web(view, payload, streaming=True)
+                    self._show_text_answer(payload)
+                    return
+                now = time.monotonic()
+                if not force and self._web_visible and now - self._last_web_render < WEB_FLUSH_INTERVAL:
+                    return  # a later flush (or the final one) picks up the newest text
+                self._last_web_render = now
+                if not self._web_visible:
+                    self._answer_view.hide()
+                    view.show()
+                    self._web_visible = True
+                if render.render_into_web(view, payload, streaming=not force and self._streaming):
+                    return
+        self._show_text_answer(payload)
+
+    def _show_text_answer(self, payload: str) -> None:
+        if self._web_visible and self._web_view is not None:
+            self._web_view.hide()
+            self._answer_view.show()
+            self._web_visible = False
+        render.render_into(self._answer_view, payload)
+
+    def _should_render_web(self, text: str) -> bool:
+        if not self._settings.web_render or not text or self._web_failed:
+            return False
+        return render.needs_web_view(text)
+
+    def _ensure_web_view(self):
+        """Create the QtWebEngine view on first need; None disables rich rendering."""
+        if self._web_view is not None or self._web_failed:
+            return self._web_view
+        try:
+            from .webview import RichAnswerWebView, web_view_available
+
+            if not web_view_available():
+                raise RuntimeError("bundled KaTeX/mermaid assets are missing")
+            view = RichAnswerWebView(self._answer_panel)
+        except Exception as exc:  # noqa: BLE001 - fall back to the text view
+            self._web_failed = True
+            self.set_status(f"math/diagram rendering unavailable: {exc}")
+            return None
+        view.ready_changed.connect(self._on_web_ready)
+        self._answer_layout.insertWidget(self._answer_view_index + 1, view, 1)
+        view.hide()
+        self._web_view = view
+        return view
+
+    def _on_web_ready(self, ready: bool) -> None:
+        """Swap the answer into the web view once its assets have loaded."""
+        if not ready:
+            self._web_failed = True  # page never loaded: stay on the text view
+        if self._should_render_web(self._answer_buffer):
+            self._render_answer(force=True)
+
+    def _reset_answer_panel(self) -> None:
+        """Clear both renderers and show the text view again."""
+        self._answer_buffer = ""
+        self._answer_view.clear()
+        if self._web_view is not None:
+            self._web_view.clear_content()
+        if self._web_visible:
+            self._web_visible = False
+            self._web_view.hide()
+            self._answer_view.show()
 
     def _flush_answer(self, *, force: bool = False) -> None:
         scrollbar = self._answer_view.verticalScrollBar()
         at_bottom = scrollbar is not None and scrollbar.value() >= scrollbar.maximum() - 4
-        self._render_answer()
-        if at_bottom and scrollbar is not None:
+        self._render_answer(force=force)
+        if at_bottom and scrollbar is not None and not self._web_visible:
             scrollbar.setValue(scrollbar.maximum())
         if force:
             self._flush_timer.stop()
@@ -562,7 +722,7 @@ class OverlayWindow(QWidget):
         self.set_status(f"error: {message}", error=True)
         if self._answer_buffer.strip():
             self._render_answer(
-                self._answer_buffer + f"\n\n---\n*stream interrupted: {message}*"
+                self._answer_buffer + f"\n\n---\n*stream interrupted: {message}*", force=True
             )
             self._items.append(
                 {"question": question, "answer": self._answer_buffer, "kind": "chat"}
@@ -593,7 +753,7 @@ class OverlayWindow(QWidget):
     def _show_index(self) -> None:
         item = self._items[self._index]
         self._answer_buffer = item["answer"]
-        self._render_answer()
+        self._render_answer(force=True)
         self._update_position_label()
 
     def load_items(self, items: list[dict[str, str]]) -> None:
@@ -627,15 +787,22 @@ class OverlayWindow(QWidget):
         self.move(self.x() + dx, self.y() + dy)
 
     def nudge_scroll(self, pixels: int) -> None:
+        if self._web_visible and self._web_view is not None:
+            self._web_view.scroll_by(pixels)
+            return
         scrollbar = self._answer_view.verticalScrollBar()
         if scrollbar is not None:
             scrollbar.setValue(scrollbar.value() + pixels)
 
     def ask_hotkey(self) -> None:
+        """Submit the manual box, else the transcript box, else queued screenshots."""
         question = self._manual_input.text().strip() or self._stt_input.text().strip()
         if question:
             self._manual_input.clear()
             self.submit_question(question)
+            return
+        if self._pending_images:
+            self.submit_vision(self._settings.screenshot_prompt, self._take_pending_images())
 
     def report_api_error(self, error: Exception) -> None:
         message = str(error) if isinstance(error, ApiError) else f"unexpected error: {error}"

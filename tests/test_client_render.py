@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -23,6 +24,23 @@ def add(a, b):
 ```
 
 Inline `code` too.
+"""
+
+MATH_ANSWER = """\
+Energy is $E = mc^2$ at rest.
+
+$$
+\\int_0^1 x^2\\,dx = \\tfrac13
+$$
+
+```bash
+echo "$HOME $(date)"
+```
+
+```mermaid
+graph TD
+    A[One] --> B[Two]
+```
 """
 
 
@@ -87,3 +105,66 @@ def test_render_into_falls_back(monkeypatch):
     assert render.render_into(view, SAMPLE) is False
     assert view.markdown == SAMPLE
     assert view.html is None
+
+
+# --------------------------------------------------------------- math/mermaid #
+
+
+def test_needs_web_view_detection():
+    assert render.needs_web_view("solve $x^2$ for x")
+    assert render.needs_web_view("$$\nx\n$$")
+    assert render.needs_web_view(r"use \(a+b\) here")
+    assert render.needs_web_view("\\[\nf(x)\n\\]")
+    assert render.needs_web_view("```mermaid\ngraph TD\n```")
+    assert not render.needs_web_view("plain answer")
+    assert not render.needs_web_view("")
+    # currency is not math (no web view needed for prose alone)
+    assert not render.needs_web_view("It costs $5 and $10 in total.")
+
+
+def test_web_fragment_has_katex_and_mermaid_nodes():
+    fragment = render.answer_to_web_fragment(MATH_ANSWER)
+    assert fragment is not None
+    assert fragment.count('class="arithmatex"') == 2  # one inline + one display
+    assert r"\(" in fragment and r"\[" in fragment
+    assert '<div class="mermaid" data-src="' in fragment
+    assert "codehilite" in fragment  # code blocks are still highlighted
+
+
+def test_web_fragment_leaves_code_alone():
+    fragment = render.answer_to_web_fragment(MATH_ANSWER)
+    assert fragment is not None
+    text = re.sub(r"<[^>]+>", "", fragment)
+    assert 'echo "$HOME $(date)"' in text  # shell dollars were not treated as math
+    assert "$E = mc^2$" not in fragment  # the inline math source was converted
+
+
+def test_web_fragment_none_without_libraries(monkeypatch):
+    monkeypatch.setattr(render, "_HAVE_MARKDOWN", False)
+    assert render.answer_to_web_fragment(MATH_ANSWER) is None
+
+
+class _WebViewStub:
+    """Records what render_into_web pushes into a web view."""
+
+    def __init__(self) -> None:
+        self.content: str | None = None
+        self.streaming: bool | None = None
+
+    def set_content(self, fragment: str, *, streaming: bool = False) -> None:
+        self.content = fragment
+        self.streaming = streaming
+
+
+def test_render_into_web_records_content():
+    view = _WebViewStub()
+    assert render.render_into_web(view, MATH_ANSWER, streaming=True) is True
+    assert view.content is not None and "arithmatex" in view.content
+    assert view.streaming is True
+
+
+def test_render_into_web_falls_back(monkeypatch):
+    monkeypatch.setattr(render, "_HAVE_PYGMENTS", False)
+    view = _WebViewStub()
+    assert render.render_into_web(view, MATH_ANSWER) is False
+    assert view.content is None

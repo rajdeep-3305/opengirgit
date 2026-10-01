@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import os
+import time
 
 import pytest
 
@@ -27,7 +28,7 @@ from opengirgit.dialogs import (  # noqa: E402
 )
 from opengirgit.overlay import OverlayWindow  # noqa: E402
 from opengirgit.stores import ConversationStore  # noqa: E402
-from PySide6.QtCore import QBuffer, Qt  # noqa: E402
+from PySide6.QtCore import QBuffer, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QGuiApplication, QPixmap  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -44,13 +45,16 @@ def _qt_cleanup(qt_app):
 
     Letting Python garbage-collect parent/child widgets in arbitrary order at
     interpreter exit makes shiboken crash, so widgets are closed here while a
-    live QApplication still owns them.
+    live QApplication still owns them. Deferred deletions are delivered too:
+    tests run outside an event loop, and a surviving QWebEnginePage crashes at
+    exit when the WebEngine profile is released.
     """
     yield
     for widget in list(qt_app.topLevelWidgets()):
         widget.close()
         widget.deleteLater()
     qt_app.processEvents()
+    qt_app.sendPostedEvents(None, QEvent.DeferredDelete)
     qt_app.sendPostedEvents()
     qt_app.processEvents()
 
@@ -61,6 +65,7 @@ class _StubApi(ApiClient):
     def __init__(self) -> None:
         super().__init__("http://127.0.0.1:1")
         self.calls: list[str] = []
+        self.vision_images: list[list[str]] = []
 
     def chat_stream(self, message, **kwargs):  # type: ignore[override]
         self.calls.append(message)
@@ -73,6 +78,7 @@ class _StubApi(ApiClient):
 
     def vision_stream(self, prompt, images_b64, **kwargs):  # type: ignore[override]
         self.calls.append(f"vision:{prompt}")
+        self.vision_images.append(list(images_b64))
         on_chunk = kwargs.get("on_chunk")
         answer = "Screenshot answer"
         if on_chunk:
@@ -317,14 +323,127 @@ def test_overlay_shows_screenshot_thumbnails(qt_app, tmp_path):
     assert len(overlay._attachment_widgets) == 1  # noqa: SLF001
     assert overlay._attachment_widgets[0].pixmap().height() == 56  # noqa: SLF001
 
-    overlay._set_attachments([encoded] * 5)  # noqa: SLF001
-    assert len(overlay._attachment_widgets) == 4  # 3 thumbs + "+2 more"  # noqa: SLF001
-    assert "2 more" in overlay._attachment_widgets[-1].text()  # noqa: SLF001
+    overlay._set_attachments([encoded] * 6)  # noqa: SLF001
+    assert len(overlay._attachment_widgets) == 6  # 5 thumbs + "+1 more"  # noqa: SLF001
+    assert "1 more" in overlay._attachment_widgets[-1].text()  # noqa: SLF001
 
     overlay.erase()
     assert overlay._attachment_widgets == []  # noqa: SLF001
     overlay.close()
     overlay.deleteLater()
+
+
+def test_capture_queue_attaches_to_next_question(qt_app, tmp_path):
+    stub = _StubApi()
+    overlay = OverlayWindow(stub, _settings(tmp_path), ConversationStore(), lambda: "")
+
+    assert overlay.add_capture(_png_b64(6, 4)) is True
+    assert overlay.add_capture(_png_b64(5, 5)) is True
+    assert len(overlay._pending_images) == 2  # noqa: SLF001
+    assert len(overlay._pending_widgets) == 2  # noqa: SLF001
+    assert "2 screenshots ready" in overlay._status.text()  # noqa: SLF001
+
+    overlay.submit_question("read both regions")
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+
+    assert stub.calls == ["vision:read both regions"]  # queued shots rode along
+    assert len(stub.vision_images[0]) == 2
+    assert overlay._pending_images == []  # noqa: SLF001
+    assert overlay._pending_widgets == []  # noqa: SLF001
+    overlay.close()
+
+
+def test_capture_queue_caps_and_removes(qt_app, tmp_path):
+    overlay = OverlayWindow(_StubApi(), _settings(tmp_path), ConversationStore(), lambda: "")
+    shot = _png_b64()
+
+    for _ in range(5):
+        assert overlay.add_capture(shot) is True
+    assert overlay.add_capture(shot) is False
+    assert "maximum 5" in overlay._status.text()  # noqa: SLF001
+
+    overlay._remove_capture(shot)  # noqa: SLF001
+    assert len(overlay._pending_images) == 4  # noqa: SLF001
+
+    overlay.erase()
+    assert overlay._pending_images == []  # noqa: SLF001
+    assert overlay._pending_widgets == []  # noqa: SLF001
+    overlay.close()
+
+
+def test_ask_hotkey_sends_only_screenshots(qt_app, tmp_path):
+    stub = _StubApi()
+    overlay = OverlayWindow(stub, _settings(tmp_path), ConversationStore(), lambda: "")
+
+    assert overlay.add_capture(_png_b64()) is True
+    overlay.ask_hotkey()
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+
+    assert len(stub.calls) == 1 and stub.calls[0].startswith("vision:")
+    assert stub.calls[0] != "vision:"  # the default screenshot prompt was used
+    assert len(stub.vision_images[0]) == 1
+    overlay.close()
+
+
+def test_overlay_switches_to_web_view_for_math(qt_app, tmp_path):
+    webview = pytest.importorskip("opengirgit.webview")
+    if not webview.web_view_available():
+        pytest.skip("vendored KaTeX/mermaid assets missing")
+
+    class _MathApi(_StubApi):
+        def chat_stream(self, message, **kwargs):  # type: ignore[override]
+            self.calls.append(message)
+            on_chunk = kwargs.get("on_chunk")
+            parts = ["Euler: ", "$e^{i\\pi} + 1 = 0$ completes."]
+            for part in parts:
+                if on_chunk:
+                    on_chunk(part)
+            return "".join(parts)
+
+    overlay = OverlayWindow(_MathApi(), _settings(tmp_path), ConversationStore(), lambda: "")
+    overlay.submit_question("do the math")
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+
+    # The embedded page loads asynchronously; the overlay swaps to it on ready.
+    deadline = time.monotonic() + 30.0
+    while not overlay._web_visible and time.monotonic() < deadline:  # noqa: SLF001
+        qt_app.processEvents()
+        time.sleep(0.1)
+    overlay._flush_answer(force=True)  # noqa: SLF001
+
+    assert overlay._web_visible is True  # noqa: SLF001
+    assert overlay._web_view is not None  # noqa: SLF001
+
+    overlay._render_answer("plain text answer", force=True)  # noqa: SLF001
+    assert overlay._web_visible is False  # noqa: SLF001
+    assert "plain text answer" in overlay._answer_view.toPlainText()  # noqa: SLF001
+    overlay.close()
+
+
+def test_overlay_web_render_disabled_and_failed_fallback(qt_app, tmp_path):
+    settings = _settings(tmp_path)
+    settings.web_render = False
+    overlay = OverlayWindow(_StubApi(), settings, ConversationStore(), lambda: "")
+    overlay._answer_buffer = "math $x^2$ here"  # noqa: SLF001
+    overlay._render_answer(force=True)  # noqa: SLF001
+    assert overlay._web_view is None  # never created  # noqa: SLF001
+    assert overlay._web_visible is False  # noqa: SLF001
+    assert "x^2" in overlay._answer_view.toPlainText()  # noqa: SLF001
+
+    overlay._web_failed = True  # noqa: SLF001 - pretend the web engine broke
+    overlay._render_answer(force=True)  # noqa: SLF001
+    assert overlay._web_visible is False  # noqa: SLF001
+    assert "x^2" in overlay._answer_view.toPlainText()  # noqa: SLF001
+    overlay.close()
 
 
 def test_app_controller_wiring(qt_app, tmp_path, monkeypatch):

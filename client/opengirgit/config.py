@@ -46,6 +46,7 @@ _ENV_MAP = {
     "OPENGIRGIT_AUTO_ASK": ("auto_ask", "bool"),
     "OPENGIRGIT_PARTIALS": ("partials", "bool"),
     "OPENGIRGIT_DECOY_CURSOR": ("decoy_cursor", "bool"),
+    "OPENGIRGIT_WEB_RENDER": ("web_render", "bool"),
     "OPENGIRGIT_SILENCE_SECONDS": ("silence_seconds", float),
     "OPENGIRGIT_OPACITY": ("opacity", float),
     "OPENGIRGIT_SCREENSHOT_PROMPT": ("screenshot_prompt", str),
@@ -71,6 +72,7 @@ class AppSettings:
     auto_ask: bool = True
     partials: bool = True  # show live in-progress transcripts (local whisper re-runs)
     decoy_cursor: bool = True  # hide the real cursor during region selection
+    web_render: bool = True  # render math/mermaid answers with the embedded web view
     opacity: float = 0.96
     screenshot_prompt: str = DEFAULT_SCREENSHOT_PROMPT
 
