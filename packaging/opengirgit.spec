@@ -30,12 +30,16 @@ hiddenimports = [
     "app.resume",
     "app.stt",
     "opengirgit.app",
+    "opengirgit.webview",  # lazily imported from the overlay; pulls QtWebEngine
     "uvicorn.logging",
     "uvicorn.loops.auto",
     "uvicorn.protocols.http.auto",
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan.on",
 ]
+
+# Vendored KaTeX + mermaid assets used by the math/diagram answer view (MIT).
+datas += [(str(ROOT / "client" / "opengirgit" / "assets"), "opengirgit/assets")]
 
 # Heavy scientific/STT stack: grab package data, shared libraries and modules.
 for package in (
@@ -78,6 +82,15 @@ a = Analysis(  # noqa: F821 - provided by PyInstaller
     excludes=["tkinter", "matplotlib", "pytest"],
     noarchive=False,
 )
+
+# Chromium ships ~40 MB of locale paks for its internal UI (context menus, error
+# pages); only en-US.pak is ever loaded — every other system locale falls back
+# to it — so the rest are dropped from the bundle.
+a.datas = [  # noqa: F821
+    entry
+    for entry in a.datas
+    if "qtwebengine_locales" not in entry[0] or entry[0].endswith("en-US.pak")
+]
 
 pyz = PYZ(a.pure)  # noqa: F821
 

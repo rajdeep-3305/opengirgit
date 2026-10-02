@@ -44,6 +44,16 @@ jobs:
           Stop-Process -Id $p.Id -Force
           Write-Host "smoke test passed"
 
+      # Non-fatal: QtWebEngine headless startup can be flaky on CI runners, but
+      # a failure here is worth seeing (math/diagram rendering in the real exe).
+      - name: Math/diagram self-test in the bundled exe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          & "dist\OpenGirGit\OpenGirGit.exe" --check-render
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning ::--check-render exited with $LASTEXITCODE" }
+
       - name: Zip
         run: Compress-Archive -Path dist/OpenGirGit -DestinationPath dist/OpenGirGit-windows-x64.zip
 

@@ -1,10 +1,13 @@
 """Frozen-desktop entry point: bundled API server + overlay client in one exe.
 
-1. If something already answers ``/api/health`` on the configured host/port the
+1. Client-only utility flags (``--check-render``, ``--print-settings``,
+   ``--list-devices``, ``--help``) are handled directly, without starting the
+   bundled server.
+2. If something already answers ``/api/health`` on the configured host/port the
    launcher leaves it alone (so the exe can also attach to a server you run
    separately).
-2. Otherwise the packaged FastAPI app is started in a daemon thread.
-3. The normal client bootstrap then runs (login dialog, overlay, hotkeys).
+3. Otherwise the packaged FastAPI app is started in a daemon thread.
+4. The normal client bootstrap then runs (login dialog, overlay, hotkeys).
 
 Configuration is exactly the source-distribution one: environment variables or
 a ``.env`` file next to the executable. ``DATA_DIR`` defaults to a writable
@@ -19,6 +22,8 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+
+_UTILITY_FLAGS = ("--check-render", "--print-settings", "--list-devices", "--help", "-h")
 
 
 def _base_dir() -> Path:
@@ -68,7 +73,6 @@ def _is_healthy(server_url: str, timeout: float = 1.5) -> bool:
 
 def _start_server_thread() -> None:
     import uvicorn
-
     from app.main import app as server_app
 
     host = os.environ.get("HOST", "127.0.0.1")
@@ -80,6 +84,13 @@ def _start_server_thread() -> None:
 
 
 def main() -> int:
+    if any(flag in sys.argv[1:] for flag in _UTILITY_FLAGS):
+        # Same flag dispatch as `python -m opengirgit` — these never need the
+        # bundled API server, and --check-render must work on a bare machine.
+        from opengirgit.__main__ import _main as client_cli
+
+        return client_cli()
+
     server_url = _prepare_environment()
 
     if not _is_healthy(server_url):
