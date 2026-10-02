@@ -52,8 +52,8 @@ billing** — you run your own server, plug in your own model, and pay nobody.
 |---|---|
 | **Speech input** | Captures **system audio loopback** (the interviewer's voice in Zoom/Meet/Teams — Windows/WASAPI) or a regular microphone (any OS), resamples to 16 kHz mono. |
 | **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. The local engine also fills the box **while the speaker is talking** (re-transcribes every ~1.2 s, with adaptive back-off on slow machines). |
-| **Answers** | SSE streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…). Answers render as streaming Markdown with **syntax-highlighted code blocks** and tables (Pygments). |
-| **Vision** | Hotkey → select a screen region → the screenshot (with a thumbnail preview in the panel) is sent to a vision-capable model (e.g. "solve the coding problem on screen"). |
+| **Answers** | SSE streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). |
+| **Vision** | Hotkey → select a screen region. Each selection is **queued as a removable thumbnail**, so several regions (up to 5, e.g. a problem statement and its examples) can be attached to one question; the next question you type, speak or Ask carries them to a vision-capable model ("solve the coding problem on screen"). |
 | **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. |
 | **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog, navigable with hotkeys. |
 | **Overlay UX** | Frameless, always-on-top, translucent, draggable bar; collapsible answer panel; opacity and move hotkeys; resize grip. |
@@ -113,7 +113,9 @@ opengirgit/
 │   │   ├── stt.py             ← local faster-whisper (with partials) & Deepgram
 │   │   ├── capture.py         ← screen region selection + decoy cursor
 │   │   ├── decoy.py           ← share-safe cursor (GDI bitmap / drawn arrow)
-│   │   ├── render.py          ← markdown → HTML with highlighted code
+│   │   ├── render.py          ← markdown → HTML; math/mermaid extraction for the web view
+│   │   ├── webview.py         ← optional QtWebEngine answer view (KaTeX + mermaid)
+│   │   ├── assets/            ← vendored KaTeX + mermaid JS/CSS/fonts (MIT, offline)
 │   │   ├── stealth.py         ← WDA_EXCLUDEFROMCAPTURE / tool-window
 │   │   ├── hotkeys.py         ← global hotkeys + validation
 │   │   ├── prompts.py         ← context formatting
@@ -261,8 +263,9 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `auto_ask` | `true` | Submit a question automatically when a final transcript arrives. |
 | `partials` | `true` | Live partial transcripts while the local engine is transcribing. |
 | `decoy_cursor` | `true` | Hide the real cursor during region selection (see stealth notes). |
+| `web_render` | `true` | Render LaTeX math and mermaid diagrams in the embedded QtWebEngine view (falls back to plain text when unavailable; set `false` to save memory). |
 | `opacity` | `0.96` | Overlay opacity. |
-| `screenshot_prompt` | built-in | Prompt used for screenshot analysis. |
+| `screenshot_prompt` | built-in | Prompt used when you attach screenshot(s) with no typed question. |
 | `hotkeys` | see below | Hotkey combos as `"Shift+Alt+K"` strings; editable in the settings dialog (an empty value disables a hotkey). |
 
 Files written by the client: `~/.opengirgit/{config,credentials,context,conversations,resume_cache}.json`.
@@ -280,7 +283,7 @@ application shortcuts):
 | Collapse / expand answers | `Shift+Alt+H` | |
 | Ask AI (submits the manual box) | `Shift+Alt+A` | OS key-repeat suppressed |
 | Erase inputs | `Shift+Alt+D` | OS key-repeat suppressed |
-| Screenshot region → analyse | `Shift+Alt+S` | opens a selection overlay |
+| Screenshot region (repeat to attach several) | `Shift+Alt+S` | opens a selection overlay; each region is queued as a thumbnail |
 | Previous / next answer | `Shift+Alt+[` / `Shift+Alt+]` | |
 | Scroll answer up / down | `Shift+Alt+W` / `Shift+Alt+X` | hold to repeat |
 | Move overlay up/down/left/right | `Shift+Alt+I` / `K` / `J` / `L` | hold to repeat |
@@ -344,17 +347,19 @@ entirely: your server bills nothing.
 * Core flow (overlay, 14 hotkeys, capture exclusion, loopback capture,
   screenshot→vision, resume/JD context, streaming answers, history), live
   partial transcripts, decoy cursor during selection, editable hotkeys.
+* **Math (LaTeX) and mermaid diagrams** render in an embedded web view, exactly
+  like the original — with KaTeX and mermaid vendored locally (MIT), so unlike
+  a CDN-based renderer it keeps working offline.
+* **Multi-region screenshots**: each capture is queued as a removable thumbnail
+  (up to 5) and the next question carries them all to the vision model.
 * Latency when configured equivalently (Deepgram + cloud LLM): the plumbing
   adds ~20 ms end-to-end (see measurements below).
 
 **Where the original is still ahead**
 
-* Rendering of **math and diagrams**: its embedded web view renders LaTeX/KaTeX
-  and mermaid; here code is syntax-highlighted but math/diagrams do not render.
 * **Zero-setup distribution** for non-technical users on Windows: an installer
   vs. `run.ps1` / the CI-built PyInstaller folder.
-* **Small conveniences** not rebuilt yet: selecting several screenshot regions
-  for one question, pixel-level UI polish.
+* **Pixel-level UI polish** (fonts, spacing, transitions).
 * **Default answer quality** depends on the model you point it at; there is no
   vendor-tuned default stack.
 
@@ -367,7 +372,7 @@ from the engine and model you configure.
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 72 offline tests, no network needed
+pytest                                    # 88 offline tests, no network needed
 ruff check server client tests
 ```
 
@@ -383,8 +388,9 @@ Test layout:
 | `tests/test_client_stores.py` | bounded history, atomic writes, credential fallback |
 | `tests/test_client_hotkeys.py` | hotkey parsing + editor validation (skipped without PySide6) |
 | `tests/test_client_api.py` | SSE assembly, error events, cancellation, retry policy, URLs |
-| `tests/test_client_render.py` | markdown→HTML rendering, pygments highlighting, fallback |
-| `tests/test_client_ui.py` | headless (offscreen) construction, streaming, thumbnails, decoy cursor, dialogs |
+| `tests/test_client_render.py` | markdown→HTML rendering, pygments highlighting, math/mermaid extraction, fallback |
+| `tests/test_client_webview.py` | KaTeX + mermaid rendering in the embedded QtWebEngine (offscreen; skipped without WebEngine) |
+| `tests/test_client_ui.py` | headless (offscreen) construction, streaming, capture queue, web-view swap, thumbnails, decoy cursor, dialogs |
 | `tests/e2e/run_e2e.py` | boots the real server + mock model and drives the client HTTP layer |
 | `tests/e2e/stt_smoke.py` | optional live STT check (file replay or live capture, needs faster-whisper) |
 
@@ -420,6 +426,22 @@ python tests/e2e/stt_smoke.py --capture 8 --source microphone --device input:3
 The first run downloads the model; the script exits 0 only when a transcript
 (and the `--expect` substring, if given) came back.
 
+### Verifying math/diagram rendering on your machine
+
+```bash
+# source tree
+python -m opengirgit --check-render
+
+# packaged build (no display needed; runs headless)
+dist/OpenGirGit/OpenGirGit.exe --check-render
+```
+
+This starts the embedded browser headlessly, renders a sample answer with KaTeX
++ mermaid and prints `KaTeX nodes: 2  mermaid SVGs: 1`; exit code 0 means both
+rendered. If it reports `assets are missing`, reinstall/rebuild the client — the
+vendored JS lives in `client/opengirgit/assets/` (`web_render=false` disables
+the web view entirely, which is also a valid way to run on weak machines).
+
 ### Latency notes
 
 Measured on an ordinary CPU (no GPU), 16 kHz input replayed in real time, an
@@ -451,12 +473,15 @@ lowest-latency option.
 | Local STT (faster-whisper) | ✅ real speech clip transcribed word-perfect via `stt_smoke.py`, both 16 kHz mono and 48 kHz stereo through the capture chain |
 | Live partials (local engine) | ✅ real speech clip, real-time replay: 9 partial updates during an 11 s utterance |
 | Answer rendering (pygments highlighting, tables, fallback) | ✅ unit tests + offscreen render |
+| Math (KaTeX) + mermaid rendering | ✅ offscreen WebEngine test: formulas become KaTeX nodes, the diagram renders as an SVG, code blocks round-trip untouched; ⏳ appearance inside the capture-excluded overlay on Windows |
+| Math/diagram self-test (`--check-render`) | ✅ from source and inside the Linux PyInstaller bundle; the release workflow runs it on the Windows exe (non-fatal step) |
 | Screenshot thumbnails | ✅ offscreen UI tests |
+| Multi-region screenshots | ✅ queue/cap/remove/attach tests + `run_e2e.py` sends two images in one vision request; ⏳ Windows capture flow |
 | Decoy cursor (region selection) | ✅ blank/dummy/glide logic + pixmap fallback offscreen; ⏳ GDI bitmap and share appearance on Windows |
 | Hotkey editor | ✅ validation + save flow offscreen; registration path unchanged |
 | Feedback dialog | ✅ payload test + offscreen send flow |
 | One-command launchers | ✅ `run.sh`: real venv check, server start, health wait, clean shutdown; ⏳ `run.ps1` on Windows |
-| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec (server healthy from the exe); ⏳ Windows exe from CI on a release tag |
+| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; ⏳ Windows exe from CI on a release tag |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
 | WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
 | Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 14 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
@@ -468,8 +493,8 @@ lowest-latency option.
 ## Roadmap
 
 - [x] Streaming partial transcripts from local whisper (chunked re-transcription).
-- [ ] Math (LaTeX) and mermaid rendering — needs a small web view or an image renderer; decision pending.
-- [ ] Multi-region screenshots (send several selections with one question; the API already takes a list).
+- [x] Math (LaTeX, KaTeX) and mermaid diagram rendering via a bundled offline web view.
+- [x] Multi-region screenshots (queued thumbnails; up to 5 images per question).
 - [ ] Verify and iterate the Windows PyInstaller bundle on real hardware (CI builds it on tags).
 - [ ] macOS audio capture (`ScreenCaptureKit`/BlackHole docs) and Linux PipeWire loopback helper.
 - [ ] Optional WebSocket chat transport (the server already speaks SSE; WS is a drop-in).
