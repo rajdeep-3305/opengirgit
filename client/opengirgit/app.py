@@ -171,13 +171,21 @@ class AppController(QObject):
     # ------------------------------------------------------------ screenshot #
 
     def take_screenshot(self) -> None:
+        if self._selector is not None:
+            self._overlay.set_status("region selection already open")
+            return
         self._selector = RegionSelector(decoy=self._settings.decoy_cursor)
         self._selector.region_selected.connect(self._on_region_selected)
+        self._selector.selection_cancelled.connect(self._on_selection_cancelled)
         self._selector.showFullScreen()
         self._selector.raise_()
         self._selector.activateWindow()
 
+    def _on_selection_cancelled(self) -> None:
+        self._selector = None
+
     def _on_region_selected(self, rect) -> None:
+        self._selector = None
         pixmap = grab_screen_region(rect)
         if pixmap.isNull():
             self._overlay.set_status("could not capture that region", error=True)
@@ -186,8 +194,8 @@ class AppController(QObject):
         if not encoded:
             self._overlay.set_status("could not encode the screenshot", error=True)
             return
-        self._overlay.submit_vision(self._settings.screenshot_prompt, [encoded])
-        self._selector = None
+        # Queued: the next question (typed, spoken or Ask) carries it along.
+        self._overlay.add_capture(encoded)
 
     # ---------------------------------------------------------------- hotkeys #
 
@@ -295,6 +303,15 @@ def _authenticate(settings: AppSettings, credentials: CredentialsStore) -> tuple
 def main(argv: list[str] | None = None) -> int:
     load_dotenv_if_present()
     settings = AppSettings.load()
+
+    try:
+        from PySide6.QtCore import QCoreApplication, Qt
+
+        # Needed before the QApplication exists for the lazily-created QtWebEngine
+        # answer view that renders math and mermaid diagrams.
+        QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
+    except Exception:  # noqa: BLE001 - only a hint; never block startup over it
+        pass
 
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("OpenGirGit")

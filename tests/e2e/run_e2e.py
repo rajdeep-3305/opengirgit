@@ -114,6 +114,13 @@ def main() -> int:
         assert "Solve the screenshot" in vision
         print("vision streaming ok:", vision)
 
+        # Multi-region: several images ride along in one vision request.
+        multi = client.vision_stream(
+            "Solve both screenshots", ["aGVsbG8=", "d29ybGQ="], on_chunk=lambda _c: None
+        )
+        assert "Solve both screenshots" in multi
+        print("multi-image vision ok:", multi)
+
         parsed = client.parse_resume("Ada Lovelace — mathematician, python.")
         assert parsed["name"] == "Ada Lovelace"
         assert "python" in parsed["skills"]
