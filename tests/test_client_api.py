@@ -8,6 +8,9 @@ import pytest
 from opengirgit import api as api_module
 from opengirgit.api import ApiClient, ApiError, Cancelled
 
+#: Captured before any fixture patches it, so WebSocket tests can opt back in.
+_REAL_STREAM_WS = ApiClient._stream_ws
+
 
 class _FakeResponse:
     def __init__(self, lines: list[str], status: int = 200) -> None:
@@ -54,6 +57,16 @@ class _FakeClient:
 @pytest.fixture(autouse=True)
 def _patch_httpx(monkeypatch):
     monkeypatch.setattr(api_module.httpx, "Client", _FakeClient)
+
+
+@pytest.fixture(autouse=True)
+def _offline_websockets(monkeypatch):
+    """Never dial a real socket: the SSE tests fall back deterministically."""
+
+    def unavailable(self, kind, payload, on_chunk, cancel):
+        raise api_module._WebSocketUnavailable("offline test")
+
+    monkeypatch.setattr(ApiClient, "_stream_ws", unavailable)
 
 
 def _sse(*events: dict) -> list[str]:
@@ -201,3 +214,136 @@ def test_feedback_payload(monkeypatch):
     assert captured["method"] == "POST"
     assert captured["url"].endswith("/api/feedback/submit")
     assert captured["json"] == {"message": "hi", "email": "a@b.c", "app_version": "9.9"}
+
+
+# --------------------------------------------------------------------------- #
+# WebSocket transport
+# --------------------------------------------------------------------------- #
+
+
+class _FakeWsConnection:
+    """Minimal websockets.sync.client connection stand-in."""
+
+    def __init__(self, frames: list) -> None:
+        self._frames = list(frames)
+        self.sent: list[str] = []
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self.closed = True
+        return False
+
+    def send(self, data) -> None:
+        self.sent.append(data)
+
+    def recv(self, timeout=None):
+        if not self._frames:
+            raise TimeoutError()
+        frame = self._frames.pop(0)
+        if isinstance(frame, Exception):
+            raise frame
+        return frame
+
+
+def _require_websockets():
+    """The optional transport needs the ``websockets`` package (Deepgram dep)."""
+    return pytest.importorskip("websockets.sync.client")
+
+
+def _install_ws(monkeypatch, connection, *, fail_connect: Exception | None = None) -> None:
+    """Restore the real ``_stream_ws`` and point ``websockets`` at a fake socket."""
+    _require_websockets()
+    import websockets.sync.client as ws_client
+
+    def connect(url, **kwargs):
+        if fail_connect is not None:
+            raise fail_connect
+        connection.url = url
+        connection.headers = kwargs.get("additional_headers")
+        return connection
+
+    monkeypatch.setattr(ws_client, "connect", connect)
+    monkeypatch.setattr(ApiClient, "_stream_ws", _REAL_STREAM_WS)
+
+
+def test_websocket_url_mapping():
+    assert api_module._websocket_url("http://127.0.0.1:8000") == "ws://127.0.0.1:8000"
+    assert api_module._websocket_url("https://a.b") == "wss://a.b"
+    assert api_module._websocket_url("a.b:1234") == "ws://a.b:1234"
+
+
+def test_websocket_stream_assembles_chunks(monkeypatch):
+    connection = _FakeWsConnection(
+        [json.dumps({"chunk": "Hello "}), json.dumps({"chunk": "world"}), json.dumps({"done": True})]
+    )
+    _install_ws(monkeypatch, connection)
+    seen: list[str] = []
+    client = ApiClient("http://x", token="tok", transport="websocket")
+    answer = client.chat_stream("hi", on_chunk=seen.append)
+    assert answer == "Hello world"
+    assert seen == ["Hello ", "world"]
+    request = json.loads(connection.sent[0])
+    assert request["kind"] == "chat" and request["message"] == "hi"
+    assert connection.url.endswith("/api/llm/ws")
+    assert connection.headers["Authorization"] == "Bearer tok"
+    assert connection.closed is True
+
+
+def test_websocket_vision_sets_kind(monkeypatch):
+    connection = _FakeWsConnection([json.dumps({"chunk": "ok"}), json.dumps({"done": True})])
+    _install_ws(monkeypatch, connection)
+    answer = ApiClient("http://x", transport="websocket").vision_stream("read it", ["aW1n"])
+    assert answer == "ok"
+    request = json.loads(connection.sent[0])
+    assert request["kind"] == "vision"
+    assert request["images"] == ["aW1n"]
+
+
+def test_websocket_error_frame_raises(monkeypatch):
+    connection = _FakeWsConnection([json.dumps({"error": "upstream 429"})])
+    _install_ws(monkeypatch, connection)
+    with pytest.raises(ApiError, match="upstream 429"):
+        ApiClient("http://x", transport="websocket").chat_stream("hi")
+
+
+def test_websocket_cancel_raises(monkeypatch):
+    connection = _FakeWsConnection([json.dumps({"chunk": "a"}), json.dumps({"done": True})])
+    _install_ws(monkeypatch, connection)
+    state = {"stop": False}
+
+    def on_chunk(_text: str) -> None:
+        state["stop"] = True
+
+    with pytest.raises(Cancelled):
+        ApiClient("http://x", transport="websocket").chat_stream(
+            "hi", on_chunk=on_chunk, cancel=lambda: state["stop"]
+        )
+
+
+def test_websocket_unavailable_falls_back_to_sse(monkeypatch):
+    _install_ws(monkeypatch, _FakeWsConnection([]), fail_connect=OSError("connection refused"))
+    _FakeClient.lines = _sse({"chunk": "via sse"}, {"done": True})
+    # 'auto' falls back, even though WS is broken
+    assert ApiClient("http://x", transport="auto").chat_stream("hi") == "via sse"
+
+
+def test_websocket_forced_transport_surfaces_the_failure(monkeypatch):
+    _install_ws(monkeypatch, _FakeWsConnection([]), fail_connect=OSError("connection refused"))
+    _FakeClient.lines = _sse({"chunk": "via sse"}, {"done": True})
+    with pytest.raises(ApiError, match="websocket transport unavailable"):
+        ApiClient("http://x", transport="websocket").chat_stream("hi")
+
+
+def test_sse_transport_never_touches_the_socket(monkeypatch):
+    _require_websockets()
+    import websockets.sync.client as ws_client
+
+    def explode(*args, **kwargs):
+        raise AssertionError("the sse transport must not open a websocket")
+
+    monkeypatch.setattr(ws_client, "connect", explode)
+    _FakeClient.lines = _sse({"chunk": "plain"}, {"done": True})
+    assert ApiClient("http://x", transport="sse").chat_stream("hi") == "plain"

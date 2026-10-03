@@ -28,11 +28,24 @@ class Cancelled(Exception):
     """Raised inside a stream when the caller cancels."""
 
 
+class _WebSocketUnavailable(Exception):
+    """The server (or this install) cannot stream over WebSocket — use SSE."""
+
+
 def _normalise_base_url(url: str) -> str:
     url = (url or "").strip().rstrip("/")
     if url and not url.startswith(("http://", "https://")):
         url = "http://" + url
     return url
+
+
+def _websocket_url(base_url: str) -> str:
+    """http(s)://host → ws(s)://host (the API path is appended by the caller)."""
+    if base_url.startswith("https://"):
+        return "wss://" + base_url[len("https://") :]
+    if base_url.startswith("http://"):
+        return "ws://" + base_url[len("http://") :]
+    return "ws://" + base_url
 
 
 class ApiClient:
@@ -42,11 +55,14 @@ class ApiClient:
         token: str | None = None,
         *,
         timeout: httpx.Timeout | float | None = None,
+        transport: str = "auto",
     ) -> None:
         self.base_url = _normalise_base_url(base_url)
         self.token = token
         self.timeout = timeout or DEFAULT_TIMEOUT
         self.retry_backoff = DEFAULT_RETRY_BACKOFF
+        #: "auto" (WebSocket, SSE fallback) | "sse" | "websocket"
+        self.transport = transport or "auto"
 
     # -- plumbing --------------------------------------------------------- #
 
@@ -169,6 +185,7 @@ class ApiClient:
         on_chunk: Callable[[str], None] | None = None,
         cancel: Callable[[], bool] | None = None,
         model: str | None = None,
+        transport: str | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "message": message,
@@ -177,7 +194,7 @@ class ApiClient:
         }
         if model:
             payload["model"] = model
-        return self._stream("/api/llm/chat/stream", payload, on_chunk, cancel)
+        return self._stream("/api/llm/chat/stream", payload, on_chunk, cancel, transport=transport)
 
     def vision_stream(
         self,
@@ -189,6 +206,7 @@ class ApiClient:
         on_chunk: Callable[[str], None] | None = None,
         cancel: Callable[[], bool] | None = None,
         model: str | None = None,
+        transport: str | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "prompt": prompt,
@@ -198,9 +216,41 @@ class ApiClient:
         }
         if model:
             payload["model"] = model
-        return self._stream("/api/llm/vision/stream", payload, on_chunk, cancel)
+        return self._stream(
+            "/api/llm/vision/stream",
+            payload,
+            on_chunk,
+            cancel,
+            transport=transport,
+            kind="vision",
+        )
 
     def _stream(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        on_chunk: Callable[[str], None] | None,
+        cancel: Callable[[], bool] | None,
+        *,
+        transport: str | None = None,
+        kind: str = "chat",
+    ) -> str:
+        choice = (transport or self.transport or "sse").strip().lower()
+        if choice == "websocket":
+            try:
+                return self._stream_ws(kind, payload, on_chunk, cancel)
+            except _WebSocketUnavailable as exc:
+                raise ApiError(f"websocket transport unavailable: {exc}") from exc
+        if choice == "auto":
+            try:
+                return self._stream_ws(kind, payload, on_chunk, cancel)
+            except _WebSocketUnavailable:
+                pass  # older server or a proxy that blocks WS: plain SSE works too
+        return self._stream_sse(path, payload, on_chunk, cancel)
+
+    # -- SSE ---------------------------------------------------------------- #
+
+    def _stream_sse(
         self,
         path: str,
         payload: dict[str, Any],
@@ -246,6 +296,73 @@ class ApiClient:
         except httpx.HTTPError as exc:
             raise ApiError(f"streaming failed: {exc}") from exc
         return "".join(chunks)
+
+    # -- WebSocket ---------------------------------------------------------- #
+
+    def _stream_ws(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        on_chunk: Callable[[str], None] | None,
+        cancel: Callable[[], bool] | None,
+    ) -> str:
+        """Stream one completion over ``/api/llm/ws``.
+
+        Raises ``_WebSocketUnavailable`` when the socket cannot be opened (so
+        ``auto`` can fall back to SSE); anything after the request was sent is
+        reported as ``ApiError`` — the question is never replayed twice.
+        """
+        try:
+            from websockets.sync.client import connect
+        except ImportError as exc:
+            raise _WebSocketUnavailable("the 'websockets' package is not installed") from exc
+
+        url = f"{_websocket_url(self.base_url)}/api/llm/ws"
+        try:
+            connection = connect(
+                url,
+                additional_headers=self._headers(),
+                open_timeout=10,
+                close_timeout=2,
+                max_size=2**22,
+            )
+        except Exception as exc:  # noqa: BLE001 - connect-level failure: SSE fallback
+            raise _WebSocketUnavailable(str(exc)) from exc
+
+        chunks: list[str] = []
+        with connection:
+            try:
+                connection.send(json.dumps({"kind": kind, **payload}, ensure_ascii=False))
+            except Exception as exc:  # noqa: BLE001
+                raise ApiError(f"websocket send failed: {exc}") from exc
+            while True:
+                if cancel is not None and cancel():
+                    raise Cancelled()
+                try:
+                    raw = connection.recv(timeout=0.25)
+                except TimeoutError:
+                    continue
+                except Cancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - mid-stream failure
+                    raise ApiError(f"streaming failed: {exc}") from exc
+                if isinstance(raw, (bytes, bytearray)):
+                    raw = bytes(raw).decode("utf-8", "replace")
+                try:
+                    event = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                if event.get("error"):
+                    raise ApiError(str(event["error"]))
+                text = event.get("chunk")
+                if isinstance(text, str) and text:
+                    chunks.append(text)
+                    if on_chunk is not None:
+                        on_chunk(text)
+                if event.get("done"):
+                    return "".join(chunks)
 
     # -- helpers ----------------------------------------------------------- #
 
