@@ -14,6 +14,7 @@ Implemented surface (see docs/API.md):
     POST /api/auth/profile          store profile
     POST /api/llm/chat/stream       SSE chat completion
     POST /api/llm/vision/stream     SSE vision completion
+    WS   /api/llm/ws                optional WebSocket transport (same events)
     POST /api/resume/parse          resume text -> JSON
     POST /api/stt/token             optional Deepgram temp token
     POST /api/feedback/submit       feedback
@@ -29,10 +30,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import db, llm, stt
 from . import resume as resume_mod
@@ -374,6 +375,103 @@ def vision_stream(request: VisionRequest, user: str = Depends(current_user)) -> 
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
+
+
+# --------------------------------------------------------------------------- #
+# LLM proxy (WebSocket — the same events as SSE, optional transport)
+# --------------------------------------------------------------------------- #
+
+
+def _ws_user(websocket: WebSocket) -> str | None:
+    """Bearer token from the handshake headers; None when missing/invalid."""
+    scheme, _, token = (websocket.headers.get("authorization") or "").partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    try:
+        payload = decode_token(
+            token.strip(), settings.jwt_secret, algorithm=settings.jwt_algorithm
+        )
+    except TokenError:
+        return None
+    return str(payload.get("sub") or "").strip().lower() or None
+
+
+async def _ws_send(websocket: WebSocket, event: dict[str, Any]) -> bool:
+    """Send one JSON frame; False when the client already went away."""
+    try:
+        await websocket.send_json(event)
+        return True
+    except Exception:  # noqa: BLE001 - the peer disconnected mid-stream
+        return False
+
+
+async def _ws_answer(websocket: WebSocket, payload: dict[str, Any]) -> None:
+    """Validate one request and stream the answer frame by frame."""
+    try:
+        if str(payload.get("kind") or "chat") == "vision":
+            request = VisionRequest.model_validate(payload)
+            images = list(request.images)
+            if request.image and request.image not in images:
+                images.insert(0, request.image)
+            if not images:
+                await _ws_send(websocket, {"error": "no image supplied"})
+                return
+            prompt = request.prompt.strip() or (
+                "Read the problem or task visible in this screenshot and answer it completely."
+            )
+            messages = build_vision_messages(
+                prompt,
+                images,
+                request.conversation_history,
+                request.context,
+                base_prompt=settings.system_prompt,
+            )
+            model = llm.vision_model_name(request.model)
+        else:
+            request = ChatRequest.model_validate(payload)
+            messages = build_chat_messages(
+                request.message,
+                request.conversation_history,
+                request.context,
+                base_prompt=settings.system_prompt,
+            )
+            model = request.model
+    except ValidationError as exc:
+        first = exc.errors()[0] if exc.errors() else {}
+        await _ws_send(websocket, {"error": f"invalid request: {first.get('msg', 'bad payload')}"})
+        return
+
+    try:
+        async for chunk in llm.stream_chat(messages, model=model):
+            if not await _ws_send(websocket, {"chunk": chunk}):
+                return
+        await _ws_send(websocket, {"done": True})
+    except llm.LLMError as exc:
+        await _ws_send(websocket, {"error": str(exc)})
+    except Exception as exc:  # noqa: BLE001 - last-resort guard, mirroring SSE
+        await _ws_send(websocket, {"error": f"internal error: {exc}"})
+
+
+@app.websocket("/api/llm/ws")
+async def llm_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    if _ws_user(websocket) is None:
+        await websocket.close(code=4401)  # same meaning as the HTTP 401
+        return
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                await _ws_send(websocket, {"error": "invalid JSON"})
+                continue
+            if not isinstance(payload, dict):
+                await _ws_send(websocket, {"error": "invalid JSON"})
+                continue
+            await _ws_answer(websocket, payload)
+    except WebSocketDisconnect:
+        return
 
 
 # --------------------------------------------------------------------------- #
