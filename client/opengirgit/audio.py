@@ -1,15 +1,24 @@
-"""Audio capture: WASAPI loopback (system audio) or a microphone.
+"""Audio capture: system-audio loopback or a microphone.
 
 Output is always 16 kHz mono int16 PCM, delivered through the ``frame`` signal.
 
-* Windows **system audio** requires ``pyaudiowpatch`` and a ``loopback:<index>``
-  device (use :func:`list_devices`).
-* **Microphone** capture uses ``sounddevice`` and works on Windows, macOS and
-  Linux (device id ``input:<index>``).
+* Windows **system audio** uses ``pyaudiowpatch`` WASAPI loopback
+  (device id ``loopback:<index>``).
+* Linux **system audio** uses the PulseAudio / PipeWire **monitor** of a sink
+  (device id ``parec:<source-name>``) through the standard ``pactl``/``parec``
+  tools; without those tools it falls back to any capture device whose name
+  contains "monitor".
+* macOS **system audio** needs a virtual loopback driver: install
+  [BlackHole](https://existential.audio/blackhole/), route the system output to
+  it, and pick "BlackHole" as the microphone device.
+* **Microphone** capture uses ``sounddevice`` on every platform
+  (device id ``input:<index>``).
 """
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 
@@ -17,11 +26,15 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from .dsp import StreamResampler, float32_to_pcm16, rms, to_mono_float32
+from .i18n import tr
 
 TARGET_RATE = 16_000
 FRAMES_PER_BUFFER = 1024
 
 IS_WINDOWS = sys.platform == "win32"
+IS_LINUX = sys.platform.startswith("linux")
+
+PACTL_TIMEOUT = 3.0
 
 
 class AudioError(Exception):
@@ -59,8 +72,62 @@ def _sounddevice():  # pragma: no cover - platform dependent
     return sd
 
 
+# --------------------------------------------------------------------------- #
+# Linux system audio (PulseAudio / PipeWire monitor sources)
+# --------------------------------------------------------------------------- #
+
+
+def parse_pactl_sources(output: str, default_sink: str = "") -> list[tuple[str, bool]]:
+    """Monitor sources in ``pactl list short sources`` output, default first.
+
+    Pure function (unit-tested without a sound server): returns
+    ``(source_name, is_default_monitor)`` for every ``*.monitor`` source.
+    """
+    monitors: list[tuple[str, bool]] = []
+    for line in (output or "").splitlines():
+        columns = line.split("\t")
+        if len(columns) < 2:
+            continue
+        name = columns[1].strip()
+        if not name.endswith(".monitor"):
+            continue
+        is_default = bool(default_sink.strip()) and name == f"{default_sink.strip()}.monitor"
+        monitors.append((name, is_default))
+    monitors.sort(key=lambda entry: (not entry[1], entry[0]))
+    return monitors
+
+
+def _run_pactl(*args: str) -> str | None:
+    """Run a ``pactl`` query; None when the tool is missing or fails."""
+    if shutil.which("pactl") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["pactl", *args],
+            capture_output=True,
+            text=True,
+            timeout=PACTL_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def linux_loopback_devices() -> list[AudioDevice]:
+    """Monitor sources exposed by PulseAudio/PipeWire (empty when unavailable)."""
+    listing = _run_pactl("list", "short", "sources")
+    if listing is None:
+        return []
+    default_sink = _run_pactl("get-default-sink") or ""
+    return [
+        AudioDevice(id=f"parec:{name}", name=name, kind="loopback", is_default=is_default)
+        for name, is_default in parse_pactl_sources(listing, default_sink)
+    ]
+
+
 def list_devices() -> list[AudioDevice]:
-    """Enumerate loopback (Windows) and microphone devices."""
+    """Enumerate loopback (system audio) and microphone devices."""
     devices: list[AudioDevice] = []
 
     if IS_WINDOWS:
@@ -91,6 +158,10 @@ def list_devices() -> list[AudioDevice]:
                     )
         except AudioError:
             pass
+    elif IS_LINUX:
+        devices.extend(linux_loopback_devices())
+
+    have_loopback = any(device.kind == "loopback" for device in devices)
 
     try:  # pragma: no cover - platform dependent
         sd = _sounddevice()
@@ -103,12 +174,15 @@ def list_devices() -> list[AudioDevice]:
             if int(info.get("max_input_channels", 0)) < 1:
                 continue
             name = str(info.get("name", f"input {index}"))
+            # PulseAudio/PipeWire "Monitor of …" inputs are loopback sources too;
+            # only surface them as such when pactl/parec were not available.
+            kind = "input"
+            if IS_LINUX and not have_loopback and "monitor" in name.lower():
+                kind = "loopback"
             is_default = bool(
                 default_input is not None and name == str(default_input.get("name", ""))
             )
-            devices.append(
-                AudioDevice(id=f"input:{index}", name=name, kind="input", is_default=is_default)
-            )
+            devices.append(AudioDevice(id=f"input:{index}", name=name, kind=kind, is_default=is_default))
     except AudioError:
         pass
 
@@ -126,6 +200,23 @@ def default_device_id(source: str) -> str:
     return ""
 
 
+def missing_device_hint(source: str) -> str:
+    """Platform-aware explanation when no capture device of ``source`` exists."""
+    if source in ("loopback", "system"):
+        if IS_WINDOWS:
+            return tr("no system-audio device found — install PyAudioWPatch or pick a microphone")
+        if IS_LINUX:
+            return tr(
+                "no system-audio monitor found — install pulseaudio-utils "
+                "(or pipewire-pulse), then use 'Refresh'"
+            )
+        return tr(
+            "system audio needs a virtual loopback driver (install BlackHole and "
+            "select it as the microphone device)"
+        )
+    return tr("no microphone found — check the audio devices, then use 'Refresh'")
+
+
 class AudioCapture(QThread):
     """Streams 16 kHz mono int16 PCM frames until :meth:`stop_capture` is called."""
 
@@ -139,6 +230,7 @@ class AudioCapture(QThread):
         self._device_id = device_id or ""
         self._stop = False
         self._stream = None
+        self._process: subprocess.Popen | None = None
 
     def stop_capture(self) -> None:
         self._stop = True
@@ -148,6 +240,12 @@ class AudioCapture(QThread):
                 stream.stop_stream()  # unblocks read()
             except Exception:
                 pass
+        process = self._process
+        if process is not None:
+            try:
+                process.terminate()  # unblocks the blocking pipe read
+            except Exception:
+                pass
 
     # -- thread ------------------------------------------------------------ #
 
@@ -155,6 +253,8 @@ class AudioCapture(QThread):
         try:
             if self._device_id.startswith("loopback:"):
                 self._run_loopback(int(self._device_id.split(":", 1)[1]))
+            elif self._device_id.startswith("parec:"):
+                self._run_parec(self._device_id.split(":", 1)[1])
             else:
                 self._run_input(self._device_id)
         except AudioError as exc:
@@ -163,6 +263,13 @@ class AudioCapture(QThread):
             self.error.emit(f"audio capture failed: {exc}")
         finally:
             self._stream = None
+            process = self._process
+            self._process = None
+            if process is not None and process.poll() is None:
+                try:
+                    process.terminate()
+                except Exception:
+                    pass
 
     # -- backends ---------------------------------------------------------- #
 
@@ -183,6 +290,43 @@ class AudioCapture(QThread):
             self._stream = stream
             self.started_ok.emit(samplerate)
             self._pump(stream.read, samplerate, channels)
+
+    def _run_parec(self, source: str) -> None:  # pragma: no cover - linux only
+        """PulseAudio/PipeWire monitor capture through ``parec`` (raw PCM)."""
+        if not source:
+            raise AudioError("no system-audio monitor source selected")
+        if shutil.which("parec") is None:
+            raise AudioError(
+                "parec is not installed — system-audio capture on Linux needs "
+                "pulseaudio-utils (or pipewire-pulse); otherwise pick a "
+                "microphone device."
+            )
+        process = subprocess.Popen(
+            [
+                "parec",
+                f"--device={source}",
+                "--raw",
+                "--format=s16le",
+                f"--rate={TARGET_RATE}",
+                "--channels=1",
+                "--latency-msec=40",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        self._process = process
+        stdout = process.stdout
+        if stdout is None:  # pragma: no cover - defensive
+            raise AudioError("could not open the monitor source")
+        self.started_ok.emit(TARGET_RATE)
+        chunk_bytes = FRAMES_PER_BUFFER * 2  # int16 mono
+        while not self._stop:
+            raw = stdout.read(chunk_bytes)
+            if not raw:
+                break
+            mono = to_mono_float32(bytes(raw), 1)
+            self.level.emit(rms(mono))
+            self.frame.emit(float32_to_pcm16(mono))
 
     def _run_input(self, device_id: str) -> None:
         sd = _sounddevice()
