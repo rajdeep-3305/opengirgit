@@ -49,3 +49,41 @@ def test_credentials_file_fallback(tmp_path, monkeypatch):
     assert loaded["access_token"] == "token-123"
     store.clear()
     assert store.load() == {}
+
+
+def test_session_and_history_export_markdown(tmp_path, monkeypatch):
+    monkeypatch.setattr(stores, "CONVERSATIONS_PATH", tmp_path / "c.json")
+    store = stores.ConversationStore()
+    store.start_session("first session")
+    store.add_item("what is a closure?", "A closure captures its environment.")
+    store.add_item("screenshot q", "vision answer", kind="vision")
+    store.start_session("second session")
+    store.add_item("later q", "later a")
+
+    sessions = store.sessions()  # newest first
+    newest = store.session_markdown(sessions[0])
+    assert newest.startswith("## second session")
+    assert "**Q:** later q" in newest
+    assert "later a" in newest
+
+    older = store.session_markdown(sessions[1])
+    assert "### Q1" in older and "### Q2 — screenshot" in older
+    assert "what is a closure?" in older
+
+    everything = store.export_markdown()
+    assert everything.startswith("# OpenGirGit conversation export")
+    # oldest first in a full export
+    assert everything.index("## first session") < everything.index("## second session")
+    assert "2 session(s)" in everything
+
+    single = store.export_markdown(str(sessions[0]["id"]))
+    assert "## second session" in single
+    assert "## first session" not in single
+
+
+def test_export_without_sessions_is_still_valid_markdown(tmp_path, monkeypatch):
+    monkeypatch.setattr(stores, "CONVERSATIONS_PATH", tmp_path / "empty.json")
+    store = stores.ConversationStore()
+    export = store.export_markdown(None)
+    assert export.startswith("# OpenGirGit conversation export")
+    assert "No conversations stored yet." in export

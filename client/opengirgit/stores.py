@@ -191,6 +191,42 @@ class ConversationStore:
     def sessions(self) -> list[dict[str, Any]]:
         return list(self._sessions)
 
+    # -- export ------------------------------------------------------------- #
+
+    def session_markdown(self, session: dict[str, Any]) -> str:
+        """One session as Markdown (used by the history dialog / exporter)."""
+        lines = [
+            f"## {session.get('title') or 'Session'}",
+            "",
+            f"*{session.get('started_at', '')}*",
+            "",
+        ]
+        for index, item in enumerate(session.get("items") or [], start=1):
+            tag = " — screenshot" if item.get("kind") == "vision" else ""
+            lines.append(f"### Q{index}{tag}")
+            lines.append("")
+            lines.append(f"**Q:** {str(item.get('question', '')).strip()}")
+            lines.append("")
+            lines.append(str(item.get("answer", "")).rstrip())
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
+    def export_markdown(self, session_id: str | None = None) -> str:
+        """Every stored session (or one) as a single Markdown document."""
+        sessions = list(self._sessions)
+        if session_id is not None:
+            sessions = [s for s in sessions if s.get("id") == session_id]
+        header = [
+            "# OpenGirGit conversation export",
+            "",
+            f"_Exported {_now()} · {len(sessions)} session(s) · generated locally, nothing sent anywhere_",
+            "",
+        ]
+        body = [self.session_markdown(s) for s in reversed(sessions)] or [
+            "_No conversations stored yet._\n"
+        ]
+        return "\n".join(header + body)
+
     def _flush(self) -> None:
         try:
             _atomic_write(CONVERSATIONS_PATH, {"sessions": self._sessions})
