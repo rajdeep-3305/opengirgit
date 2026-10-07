@@ -168,3 +168,42 @@ def test_render_into_web_falls_back(monkeypatch):
     view = _WebViewStub()
     assert render.render_into_web(view, MATH_ANSWER) is False
     assert view.content is None
+
+
+def test_light_and_dark_stylesheets_differ():
+    dark = render.answer_css()
+    light = render.answer_css("light")
+    assert "#ffffff" in dark and "#111111" in light
+    assert dark != light
+    assert render.answer_css("dark") == dark  # default variant unchanged
+
+
+def test_render_into_selects_the_stylesheet_variant():
+    class _Document:
+        def __init__(self) -> None:
+            self.sheet = ""
+            self.html = ""
+
+        def setDefaultStyleSheet(self, css: str) -> None:
+            self.sheet = css
+
+    class _View:
+        def __init__(self) -> None:
+            self._document = _Document()
+
+        def document(self) -> _Document:
+            return self._document
+
+        def setHtml(self, html: str) -> None:
+            self._document.html = html
+
+        def setMarkdown(self, text: str) -> None:  # pragma: no cover - fallback only
+            self._document.html = text
+
+    dark_view = _View()
+    assert render.render_into(dark_view, "# title\n\ntext") is True
+    assert dark_view._document.sheet == render.answer_css()
+
+    light_view = _View()
+    render.render_into(light_view, "# title\n\ntext", variant="light")
+    assert light_view._document.sheet == render.answer_css("light")

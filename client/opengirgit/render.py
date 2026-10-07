@@ -44,7 +44,7 @@ except Exception:  # noqa: BLE001
 PYGMENTS_STYLE = "monokai"
 
 #: Extra CSS applied to the answer document (dark theme, matches the overlay).
-_BASE_CSS = """
+_DARK_CSS = """
 body { color: #f2f2f2; background-color: transparent; }
 h1, h2, h3, h4 { color: #ffffff; }
 a { color: #7ab7ff; }
@@ -58,6 +58,21 @@ th, td { border: 1px solid #555555; padding: 3px 7px; }
 hr { color: #555555; }
 """
 
+#: CSS for documents shown on a standard light palette (e.g. the history dialog).
+_LIGHT_CSS = """
+body { color: #1f1f1f; background-color: transparent; }
+h1, h2, h3, h4 { color: #111111; }
+a { color: #0b5cad; }
+code { font-family: Consolas, "Courier New", monospace; background-color: #ececec;
+       color: #1f1f1f; }
+pre { font-family: Consolas, "Courier New", monospace; background-color: #f4f4f4;
+      color: #1f1f1f; }
+blockquote { color: #555555; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #b8b8b8; padding: 3px 7px; }
+hr { color: #bbbbbb; }
+"""
+
 _EXTENSIONS = ["fenced_code", "codehilite", "tables", "sane_lists"]
 
 
@@ -66,9 +81,13 @@ def rich_available() -> bool:
     return _HAVE_MARKDOWN and _HAVE_PYGMENTS
 
 
-def answer_css() -> str:
-    """Stylesheet set on the answer document before importing HTML."""
-    return _BASE_CSS
+def answer_css(variant: str = "dark") -> str:
+    """Stylesheet set on a document before importing HTML.
+
+    ``variant`` is ``"dark"`` for the translucent overlay answer panel (default)
+    or ``"light"`` for views on the standard light palette.
+    """
+    return _LIGHT_CSS if variant == "light" else _DARK_CSS
 
 
 def answer_to_html(text: str) -> str | None:
@@ -91,14 +110,15 @@ def answer_to_html(text: str) -> str | None:
         return None
 
 
-def render_into(view: Any, markdown_text: str) -> bool:
+def render_into(view: Any, markdown_text: str, *, variant: str = "dark") -> bool:
     """Render ``markdown_text`` into a ``QTextBrowser``-like ``view``.
 
-    Returns True when the rich (highlighted) path was used, False when the
-    plain ``setMarkdown`` fallback was taken.
+    ``variant`` selects the colour scheme (see :func:`answer_css`). Returns True
+    when the rich (highlighted) path was used, False when the plain
+    ``setMarkdown`` fallback was taken.
     """
     try:
-        view.document().setDefaultStyleSheet(answer_css())
+        view.document().setDefaultStyleSheet(answer_css(variant))
     except Exception:  # noqa: BLE001 - not a QTextDocument view; keep going
         pass
     html = answer_to_html(markdown_text)
