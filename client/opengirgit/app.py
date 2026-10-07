@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from PySide6.QtCore import QObject
@@ -9,11 +10,12 @@ from PySide6.QtWidgets import QApplication, QDialog
 
 from . import stealth
 from .api import ApiClient, ApiError
-from .audio import AudioCapture, AudioError, default_device_id, list_devices
+from .audio import AudioCapture, AudioError, default_device_id, list_devices, missing_device_hint
 from .capture import RegionSelector, grab_screen_region, pixmap_to_jpeg_b64
 from .config import AppSettings, load_dotenv_if_present
 from .dialogs import HistoryDialog, InfoDialog, LoginDialog, SettingsDialog
 from .hotkeys import GlobalHotkeyManager
+from .i18n import set_language, tr
 from .overlay import MOVE_STEP, OPACITY_STEP, SCROLL_STEP, OverlayWindow
 from .prompts import format_interview_context
 from .stores import ContextStore, ConversationStore, CredentialsStore, ResumeCache
@@ -37,7 +39,7 @@ class Listener(QObject):
         source_kind = "loopback" if settings.audio_source == "system" else "input"
         device_id = settings.audio_device or default_device_id(source_kind)
         if not device_id:
-            self._overlay.set_status("no audio device available", error=True)
+            self._overlay.set_status(missing_device_hint(settings.audio_source), error=True)
             self._overlay.set_mic_active(False)
             return
 
@@ -61,7 +63,9 @@ class Listener(QObject):
         self._engine = engine
         capture.start()
         engine.start()
-        self._overlay.set_status(f"listening — {describe_engine(settings)}")
+        self._overlay.set_status(
+            tr("listening — {engine}").format(engine=describe_engine(settings))
+        )
 
     def stop(self) -> None:
         if self._capture is not None:
@@ -74,7 +78,7 @@ class Listener(QObject):
             self._engine.wait(4000)
             self._engine.deleteLater()
             self._engine = None
-        self._overlay.set_status("idle")
+        self._overlay.set_status(tr("idle"))
 
     def restart(self) -> None:
         self.stop()
@@ -83,7 +87,7 @@ class Listener(QObject):
     # -- slots (always on the UI thread) ------------------------------------ #
 
     def _on_started(self, rate: int) -> None:
-        self._overlay.set_status(f"capturing @ {rate} Hz")
+        self._overlay.set_status(tr("capturing @ {rate} Hz").format(rate=rate))
 
     def _on_partial(self, text: str) -> None:
         self._overlay.set_partial(text)
@@ -92,7 +96,7 @@ class Listener(QObject):
         self._overlay.set_final(text)
 
     def _on_status(self, text: str) -> None:
-        self._overlay.set_status(f"stt: {text}")
+        self._overlay.set_status(tr("stt: {status}").format(status=text))
 
     def _on_error(self, message: str) -> None:
         self._overlay.set_status(message, error=True)
@@ -172,7 +176,7 @@ class AppController(QObject):
 
     def take_screenshot(self) -> None:
         if self._selector is not None:
-            self._overlay.set_status("region selection already open")
+            self._overlay.set_status(tr("region selection already open"))
             return
         self._selector = RegionSelector(decoy=self._settings.decoy_cursor)
         self._selector.region_selected.connect(self._on_region_selected)
@@ -188,11 +192,11 @@ class AppController(QObject):
         self._selector = None
         pixmap = grab_screen_region(rect)
         if pixmap.isNull():
-            self._overlay.set_status("could not capture that region", error=True)
+            self._overlay.set_status(tr("could not capture that region"), error=True)
             return
         encoded = pixmap_to_jpeg_b64(pixmap)
         if not encoded:
-            self._overlay.set_status("could not encode the screenshot", error=True)
+            self._overlay.set_status(tr("could not encode the screenshot"), error=True)
             return
         # Queued: the next question (typed, spoken or Ask) carries it along.
         self._overlay.add_capture(encoded)
@@ -203,7 +207,10 @@ class AppController(QObject):
         failures = self._hotkeys.register_all(self._settings.hotkeys)
         if failures:
             self._overlay.set_status(
-                "hotkeys unavailable (already in use): " + ", ".join(sorted(failures)), error=True
+                tr("hotkeys unavailable (already in use): {actions}").format(
+                    actions=", ".join(sorted(failures))
+                ),
+                error=True,
             )
 
     def _on_hotkey(self, action: str) -> None:
@@ -230,16 +237,24 @@ class AppController(QObject):
     # -------------------------------------------------------------- dialogs #
 
     def open_settings(self) -> None:
+        previous_scale = self._settings.ui_scale
         dialog = SettingsDialog(self._settings, api=self._api, email=self._email)
         if dialog.exec() == QDialog.Accepted:
             self._listener.stop()
             self._listener.deleteLater()
+            set_language(self._settings.ui_language)
             self._overlay.apply_settings(self._settings)
             self._hotkeys.unregister_all()
             self._register_hotkeys()
-            self._api = ApiClient(self._settings.server_url, token=self._api.token)
+            self._api = ApiClient(
+                self._settings.server_url,
+                token=self._api.token,
+                transport=self._settings.chat_transport,
+            )
             self._overlay.set_api(self._api)
             self._listener = Listener(self._overlay, self._settings, self._api)
+            if self._settings.ui_scale != previous_scale:
+                self._overlay.set_status(tr("UI scale applies after a restart"))
 
     def open_history(self) -> None:
         HistoryDialog(self._conversations).exec()
@@ -250,7 +265,7 @@ class AppController(QObject):
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
             self._context = dialog.result
             self._context_store.save(self._context)
-            self._overlay.set_status("interview details saved")
+            self._overlay.set_status(tr("interview details saved"))
 
     def prompt_info_once(self) -> None:
         if not self._context.get("company") and not self._context.get("resume"):
@@ -275,7 +290,7 @@ def _authenticate(settings: AppSettings, credentials: CredentialsStore) -> tuple
         token = ""  # token belongs to a different server
 
     if token:
-        api = ApiClient(settings.server_url, token=token)
+        api = ApiClient(settings.server_url, token=token, transport=settings.chat_transport)
         try:
             account = api.me()
             return str(account.get("email") or email), api
@@ -286,7 +301,7 @@ def _authenticate(settings: AppSettings, credentials: CredentialsStore) -> tuple
             except ApiError:
                 token = ""
             if token:
-                api = ApiClient(settings.server_url, token=token)
+                api = ApiClient(settings.server_url, token=token, transport=settings.chat_transport)
                 credentials.save(email, token, settings.server_url)
                 return email, api
 
@@ -297,12 +312,18 @@ def _authenticate(settings: AppSettings, credentials: CredentialsStore) -> tuple
     email = dialog.credentials["email"]
     token = dialog.credentials["access_token"]
     credentials.save(email, token, settings.server_url)
-    return email, ApiClient(settings.server_url, token=token)
+    return email, ApiClient(settings.server_url, token=token, transport=settings.chat_transport)
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv_if_present()
     settings = AppSettings.load()
+    set_language(settings.ui_language)
+
+    # Optional interface scaling (0 = leave the system/session DPI alone).
+    if settings.ui_scale:
+        os.environ.setdefault("QT_SCALE_FACTOR", f"{settings.ui_scale / 100:.2f}")
+        os.environ.setdefault("QT_SCALE_FACTOR_ROUNDING_POLICY", "PassThrough")
 
     try:
         from PySide6.QtCore import QCoreApplication, Qt

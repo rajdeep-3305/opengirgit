@@ -508,3 +508,113 @@ class _StubCredentials:
 
     def clear(self) -> None:
         return None
+
+
+def test_settings_dialog_persists_the_new_options(qt_app, tmp_path, monkeypatch):
+    from opengirgit.config import DEFAULT_HOTKEYS
+
+    monkeypatch.setattr(AppSettings, "save", lambda self: None)
+    settings = _settings(tmp_path)
+    dialog = SettingsDialog(settings)
+
+    # defaults are reflected in the widgets
+    assert dialog._web_render.isChecked() is True  # noqa: SLF001
+    assert dialog._partials.isChecked() is True  # noqa: SLF001
+    assert dialog._decoy_cursor.isChecked() is True  # noqa: SLF001
+    assert dialog._transport.currentData() == "auto"  # noqa: SLF001
+    assert dialog._ui_language.currentData() == "en"  # noqa: SLF001
+    assert dialog._ui_scale.currentData() == 0  # noqa: SLF001
+
+    dialog._web_render.setChecked(False)  # noqa: SLF001
+    dialog._partials.setChecked(False)  # noqa: SLF001
+    dialog._decoy_cursor.setChecked(False)  # noqa: SLF001
+    dialog._transport.setCurrentIndex(dialog._transport.findData("websocket"))  # noqa: SLF001
+    dialog._ui_language.setCurrentIndex(dialog._ui_language.findData("de"))  # noqa: SLF001
+    dialog._ui_scale.setCurrentIndex(dialog._ui_scale.findData(125))  # noqa: SLF001
+    dialog._hotkey_edits[list(DEFAULT_HOTKEYS)[0]].setText(DEFAULT_HOTKEYS[list(DEFAULT_HOTKEYS)[0]])  # noqa: SLF001
+    dialog._save()  # noqa: SLF001
+
+    assert settings.web_render is False
+    assert settings.partials is False
+    assert settings.decoy_cursor is False
+    assert settings.chat_transport == "websocket"
+    assert settings.ui_language == "de"
+    assert settings.ui_scale == 125
+    dialog.close()
+    dialog.deleteLater()
+
+
+def test_history_dialog_exports_and_copies(qt_app, tmp_path, monkeypatch):
+    from opengirgit import dialogs as dialogs_module
+    from opengirgit import stores as stores_module
+
+    monkeypatch.setattr(stores_module, "CONVERSATIONS_PATH", tmp_path / "conversations.json")
+    conversations = stores_module.ConversationStore()
+    conversations.start_session("mock interview")
+    conversations.add_item("what is a closure?", "It captures its environment.")
+
+    target = tmp_path / "export.md"
+    monkeypatch.setattr(
+        dialogs_module.QFileDialog,
+        "getSaveFileName",
+        staticmethod(lambda *args, **kwargs: (str(target), "Markdown (*.md)")),
+    )
+
+    dialog = HistoryDialog(conversations)
+    assert dialog._sessions.count() == 1  # noqa: SLF001
+    # the light palette keeps headings visible (regression: white-on-white)
+    assert "#111111" in dialog._viewer.document().defaultStyleSheet()  # noqa: SLF001
+
+    dialog._export_selected()  # noqa: SLF001
+    written = target.read_text(encoding="utf-8")
+    assert "what is a closure?" in written
+    assert "It captures its environment." in written
+    assert "Exported" in dialog._status.text()  # noqa: SLF001
+
+    dialog._export_all()  # noqa: SLF001
+    assert "OpenGirGit conversation export" in target.read_text(encoding="utf-8")
+
+    dialog._copy_selected()  # noqa: SLF001
+    clipboard = QGuiApplication.clipboard()
+    assert clipboard is not None and "what is a closure?" in clipboard.text()
+    dialog.close()
+    dialog.deleteLater()
+
+
+def test_history_dialog_export_without_selection_warns(qt_app, tmp_path, monkeypatch):
+    from opengirgit import stores as stores_module
+
+    monkeypatch.setattr(stores_module, "CONVERSATIONS_PATH", tmp_path / "empty.json")
+    conversations = stores_module.ConversationStore()
+    dialog = HistoryDialog(conversations)
+    dialog._export_selected()  # noqa: SLF001 - nothing selected
+    assert "Select a session" in dialog._status.text()  # noqa: SLF001
+    dialog.close()
+    dialog.deleteLater()
+
+
+def test_overlay_retranslates_when_the_language_changes(qt_app, tmp_path, monkeypatch):
+    from opengirgit import i18n
+
+    monkeypatch.setattr(i18n, "_current", "en")
+    i18n.set_language("de")
+    try:
+        overlay = OverlayWindow(_StubApi(), _settings(tmp_path), ConversationStore(), lambda: "")
+        assert overlay._ask_button.text() == "Fragen"  # noqa: SLF001
+        assert overlay._title_label.text() == "Antwort"  # noqa: SLF001
+        assert "Mikrofon" in overlay._mic_button.toolTip()  # noqa: SLF001
+        # the overlay answer panel keeps the dark stylesheet
+        overlay._show_text_answer("# Heading\n\n**bold** text")  # noqa: SLF001
+        assert "#ffffff" in overlay._answer_view.document().defaultStyleSheet()  # noqa: SLF001
+
+        assert overlay.add_capture(_png_b64()) is True
+        status = overlay._status.text()  # noqa: SLF001
+        assert "1 Screenshot bereit" in status
+        assert overlay.add_capture(_png_b64()) is True
+        assert "2 Screenshots bereit" in overlay._status.text()  # noqa: SLF001
+
+        overlay.erase()
+        assert overlay._status.text() == "geleert"  # noqa: SLF001
+        overlay.close()
+    finally:
+        i18n.set_language("en")
