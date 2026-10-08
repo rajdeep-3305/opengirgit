@@ -171,6 +171,40 @@ Auth required. Same streaming envelope as chat.
 
 Up to 5 images per request (the `images` field, or `image` for a single image).
 
+### `WS /api/llm/ws` — WebSocket transport (optional)
+
+Same auth (`Authorization: Bearer …` on the handshake), same payloads and the
+same event shapes as the SSE endpoints — the client picks it with
+`chat_transport = "auto" | "websocket"` and falls back to SSE automatically when
+the socket cannot be opened. One connection can carry any number of requests;
+frames between the client and the server are JSON text messages.
+
+Client → server (one per request):
+
+```json
+{"kind": "chat", "message": "…", "conversation_history": [], "context": "", "model": null}
+{"kind": "vision", "prompt": "…", "images": ["<base64 JPEG>"], "conversation_history": [], "context": ""}
+```
+
+Server → client:
+
+```json
+{"chunk": "A process"}
+{"chunk": " has its own"}
+{"done": true}
+{"error": "upstream 429: rate limited"}
+{"error": "invalid request: Field required"}
+```
+
+* `kind` defaults to `chat`; `vision` validates against the vision schema
+  (`images` ≤ 5) and answers `{"error": "no image supplied"}` without one.
+* A missing/invalid token closes the socket with code **`4401`** (the WebSocket
+  equivalent of HTTP 401).
+* Closing the socket mid-stream cancels the upstream LLM request, exactly like
+  dropping an SSE response.
+* Requires a server started with WebSocket support — `uvicorn[standard]`
+  (already in `server/requirements.txt`) provides it.
+
 ---
 
 ## Resume
