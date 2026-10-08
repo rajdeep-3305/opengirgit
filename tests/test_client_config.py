@@ -77,3 +77,34 @@ def test_settings_hotkeys_merge_defaults():
     settings = AppSettings.from_dict({"hotkeys": {"ask": "Ctrl+Shift+Q"}})
     assert settings.hotkeys["ask"] == "Ctrl+Shift+Q"
     assert set(DEFAULT_HOTKEYS) <= set(settings.hotkeys)
+
+
+def test_new_settings_defaults_and_clamping():
+    settings = AppSettings.from_dict({})
+    assert settings.chat_transport == "auto"
+    assert settings.ui_language == "en"
+    assert settings.ui_scale == 0
+
+    broken = AppSettings.from_dict(
+        {"chat_transport": "carrier-pigeon", "ui_language": "   ", "ui_scale": 7}
+    )
+    assert broken.chat_transport == "auto"
+    assert broken.ui_language == "en"
+    assert broken.ui_scale == 0
+
+    explicit = AppSettings.from_dict(
+        {"chat_transport": "websocket", "ui_language": "de", "ui_scale": "125"}
+    )
+    assert explicit.chat_transport == "websocket"
+    assert explicit.ui_language == "de"
+    assert explicit.ui_scale == 125
+
+
+def test_new_settings_env_overrides(monkeypatch):
+    monkeypatch.setenv("OPENGIRGIT_CHAT_TRANSPORT", "sse")
+    monkeypatch.setenv("OPENGIRGIT_UI_LANGUAGE", "de")
+    monkeypatch.setenv("OPENGIRGIT_UI_SCALE", "150")
+    settings = AppSettings.from_dict({}).apply_env()
+    assert settings.chat_transport == "sse"
+    assert settings.ui_language == "de"
+    assert settings.ui_scale == 150

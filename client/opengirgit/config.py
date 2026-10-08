@@ -50,7 +50,16 @@ _ENV_MAP = {
     "OPENGIRGIT_SILENCE_SECONDS": ("silence_seconds", float),
     "OPENGIRGIT_OPACITY": ("opacity", float),
     "OPENGIRGIT_SCREENSHOT_PROMPT": ("screenshot_prompt", str),
+    "OPENGIRGIT_CHAT_TRANSPORT": ("chat_transport", str),
+    "OPENGIRGIT_UI_LANGUAGE": ("ui_language", str),
+    "OPENGIRGIT_UI_SCALE": ("ui_scale", "int"),
 }
+
+#: Supported chat transports (``auto`` upgrades to WebSocket and falls back).
+CHAT_TRANSPORTS = ("auto", "sse", "websocket")
+
+#: UI scale presets in percent (0 = leave the system/session DPI alone).
+UI_SCALES = (0, 100, 110, 125, 150, 175, 200)
 
 
 @dataclass
@@ -76,6 +85,11 @@ class AppSettings:
     opacity: float = 0.96
     screenshot_prompt: str = DEFAULT_SCREENSHOT_PROMPT
 
+    # Transport / interface
+    chat_transport: str = "auto"  # "auto" (WebSocket with SSE fallback) | "sse" | "websocket"
+    ui_language: str = "en"  # translation code from client/opengirgit/translations, "auto" = system
+    ui_scale: int = 0  # percent (0 = follow the session/system DPI)
+
     hotkeys: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_HOTKEYS))
 
     # ------------------------------------------------------------------ #
@@ -97,6 +111,14 @@ class AppSettings:
             settings.stt_engine = "local"
         if settings.audio_source not in ("system", "microphone"):
             settings.audio_source = "system"
+        if settings.chat_transport not in CHAT_TRANSPORTS:
+            settings.chat_transport = "auto"
+        try:
+            scale = int(settings.ui_scale)
+        except (TypeError, ValueError):
+            scale = 0
+        settings.ui_scale = scale if 80 <= scale <= 300 else 0
+        settings.ui_language = str(settings.ui_language or "en").strip() or "en"
         return settings
 
     def apply_env(self) -> AppSettings:
@@ -109,6 +131,8 @@ class AppSettings:
                     value: Any = raw.strip().lower() in ("1", "true", "yes", "on")
                 elif kind is float:
                     value = float(raw)
+                elif kind == "int":
+                    value = int(float(raw))
                 else:
                     value = raw
                 setattr(self, attr, value)
