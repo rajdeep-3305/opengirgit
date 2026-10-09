@@ -10,9 +10,10 @@ Two modes, both exercising exactly the code the app runs (``dsp`` ->
     (16-bit PCM); the script resamples to 16 kHz mono itself.
 
 * ``--capture SECONDS``
-    Captures from a real device for N seconds and transcribes it. On Windows
-    ``--source system`` uses WASAPI loopback (the same path the app uses to
-    hear the interviewer); ``--source microphone`` uses the input device.
+    Captures from a real device for N seconds and transcribes it. ``--source
+    system`` uses WASAPI loopback on Windows and the default sink's
+    PulseAudio/PipeWire monitor on Linux (``parec``); ``--source microphone``
+    uses the input device. On macOS pick the BlackHole input as the device.
 
 Requires the client dependencies plus ``faster-whisper`` (see
 ``client/requirements.txt``). The model is downloaded on first use.
@@ -27,7 +28,8 @@ Examples
     # measure real latency: real-time replay + the silence gate you intend to use
     python tests/e2e/stt_smoke.py --wav speech.wav --realtime --model tiny.en --silence 0.4
 
-    # live loopback capture on Windows (play audio while it runs)
+    # live loopback capture (Windows WASAPI or Linux PulseAudio/PipeWire monitor;
+    # play audio while it runs)
     python tests/e2e/stt_smoke.py --capture 8 --source system
 
     # live microphone capture, explicit device

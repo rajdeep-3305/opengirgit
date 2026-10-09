@@ -6,7 +6,8 @@ Boots
     1. ``tests/e2e/mock_llm.py``   — fake OpenAI-compatible model,
     2. ``server/run.py``           — the OpenGirGit server pointing at the mock,
 then drives ``client/opengirgit/api.py`` exactly like the GUI does:
-OTP sign-in → chat SSE → vision SSE → resume parse → STT token refusal.
+OTP sign-in → chat SSE → chat WebSocket (+ cancellation) → vision (SSE and WS)
+→ resume parse → STT token refusal.
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ def wait_for(url: str, *, timeout: float = 30.0, process: subprocess.Popen | Non
 
 def main() -> int:
     sys.path.insert(0, str(ROOT / "client"))
-    from opengirgit.api import ApiClient, ApiError  # noqa: PLC0415
+    from opengirgit.api import ApiClient, ApiError, Cancelled  # noqa: PLC0415
 
     mock_port = free_port()
     server_port = free_port()
@@ -108,7 +109,30 @@ def main() -> int:
         assert seen, "no chunks received"
         assert answer == "".join(seen)
         assert "Explain goroutines" in answer
-        print("chat streaming ok:", answer)
+        print("chat streaming ok (auto):", answer)
+
+        # The same request over the WebSocket transport (optional, opted in).
+        ws_client = ApiClient(base, token=client.token, transport="websocket")
+        ws_seen: list[str] = []
+        ws_answer = ws_client.chat_stream("Explain goroutines", on_chunk=ws_seen.append)
+        assert ws_seen and ws_answer == "".join(ws_seen)
+        assert "Explain goroutines" in ws_answer
+        print("chat streaming ok (websocket):", ws_answer)
+
+        # Cancelling mid-stream must close the socket without an error.
+        cancelled = {"flag": False}
+
+        def _cancel_chunk(_text: str) -> None:
+            cancelled["flag"] = True
+
+        try:
+            ws_client.chat_stream(
+                "cancel me", on_chunk=_cancel_chunk, cancel=lambda: cancelled["flag"]
+            )
+        except Cancelled:
+            print("websocket cancellation ok")
+        else:
+            raise AssertionError("expected Cancelled from the websocket transport")
 
         vision = client.vision_stream("Solve the screenshot", ["aGVsbG8="], on_chunk=lambda _c: None)
         assert "Solve the screenshot" in vision
@@ -120,6 +144,10 @@ def main() -> int:
         )
         assert "Solve both screenshots" in multi
         print("multi-image vision ok:", multi)
+
+        ws_vision = ws_client.vision_stream("Read the websocket screenshot", ["aGVsbG8="])
+        assert "Read the websocket screenshot" in ws_vision
+        print("websocket vision ok:", ws_vision)
 
         parsed = client.parse_resume("Ada Lovelace — mathematician, python.")
         assert parsed["name"] == "Ada Lovelace"
