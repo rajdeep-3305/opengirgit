@@ -82,3 +82,15 @@ def test_broken_catalog_is_ignored(tmp_path, monkeypatch):
     assert i18n.set_language("fr") == "fr"
     assert i18n.tr("done") == "done"  # empty catalog → identity
     i18n.set_language("en")
+
+
+def test_regional_catalog_files_resolve_case_insensitively(tmp_path, monkeypatch):
+    monkeypatch.setattr(i18n, "TRANSLATIONS_DIR", tmp_path)
+    (tmp_path / "pt_BR.json").write_text('{"done": "feito"}', encoding="utf-8")
+    assert "pt_br" in i18n.available_languages()
+    assert i18n.set_language("pt_BR") == "pt_br"
+    assert i18n.tr("done") == "feito"
+    # a plain request falls back to the language part only when it exists
+    assert i18n.set_language("pt") == "en"
+    assert i18n.tr("done") == "done"
+    i18n.set_language("en")

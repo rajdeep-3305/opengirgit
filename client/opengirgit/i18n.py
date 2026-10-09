@@ -35,10 +35,12 @@ LANGUAGE_NAMES = {
     "nl": "Nederlands",
     "pl": "Polski",
     "pt": "Português",
+    "pt_br": "Português (Brasil)",
     "ru": "Русский",
     "tr": "Türkçe",
     "uk": "Українська",
     "zh": "中文",
+    "zh_tw": "繁體中文",
 }
 
 _current = DEFAULT_LANGUAGE
@@ -48,7 +50,7 @@ _catalog: dict[str, str] = {}
 def _catalog_codes() -> set[str]:
     if not TRANSLATIONS_DIR.is_dir():
         return set()
-    return {path.stem for path in TRANSLATIONS_DIR.glob("*.json")}
+    return {path.stem.lower() for path in TRANSLATIONS_DIR.glob("*.json")}
 
 
 def available_languages() -> dict[str, str]:
@@ -61,9 +63,20 @@ def available_languages() -> dict[str, str]:
     return languages
 
 
+def _catalog_path(language: str) -> Path | None:
+    """``translations/<language>.json``, matching the file's case-insensitively."""
+    if not TRANSLATIONS_DIR.is_dir():
+        return None
+    wanted = f"{language}.json".lower()
+    for path in sorted(TRANSLATIONS_DIR.glob("*.json")):
+        if path.name.lower() == wanted:
+            return path
+    return None
+
+
 def _load_catalog(language: str) -> dict[str, str]:
-    path = TRANSLATIONS_DIR / f"{language}.json"
-    if language == DEFAULT_LANGUAGE or not path.is_file():
+    path = _catalog_path(language)
+    if language == DEFAULT_LANGUAGE or path is None:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

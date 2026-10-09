@@ -19,13 +19,14 @@ cp client/opengirgit/translations/en.json client/opengirgit/translations/<code>.
 ```
 
 * `<code>` is an ISO 639-1 code (`fr`, `pt`, `uk`, …). Regional variants work
-  too: `pt_BR.json` wins over `pt.json`? No — the resolver picks the exact code
-  first, then the language part, so name the file `pt.json` unless you really
-  need a variant.
+  too: name the file `pt_BR.json` and select `pt_BR`. An unshipped region
+  (`pt_PT`) falls back to the language file (`pt`) when that exists, and to
+  English otherwise.
 * Keep every `{placeholder}` intact — they are filled with `.format(...)`.
 * Friendly names for the picker live in `client/opengirgit/i18n.py`
   (`LANGUAGE_NAMES`); unknown codes are shown verbatim.
-* Restart the app (or reopen Settings) and pick the language.
+* Saving the choice in Settings applies it immediately; `auto` follows the
+  desktop locale at startup.
 
 ## Verify
 

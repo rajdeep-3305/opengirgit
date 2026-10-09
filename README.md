@@ -391,7 +391,7 @@ from the engine and model you configure.
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 126 offline tests, no network needed
+pytest                                    # 127 offline tests, no network needed
 ruff check server client tests packaging tools
 python tools/collect_strings.py --check   # translation inventory is in sync
 ```
