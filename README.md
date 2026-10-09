@@ -50,14 +50,15 @@ billing** — you run your own server, plug in your own model, and pay nobody.
 
 | Area | What OpenGirGit does |
 |---|---|
-| **Speech input** | Captures **system audio loopback** (the interviewer's voice in Zoom/Meet/Teams — Windows/WASAPI) or a regular microphone (any OS), resamples to 16 kHz mono. |
+| **Speech input** | Captures **system audio loopback** — WASAPI on Windows, the PulseAudio/PipeWire **monitor** source on Linux (`parec`), BlackHole-as-microphone on macOS — or a regular microphone, and resamples everything to 16 kHz mono. |
 | **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. The local engine also fills the box **while the speaker is talking** (re-transcribes every ~1.2 s, with adaptive back-off on slow machines). |
-| **Answers** | SSE streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). |
+| **Answers** | Streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…), over **SSE** or the optional **WebSocket** transport (auto, with SSE fallback). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). |
 | **Vision** | Hotkey → select a screen region. Each selection is **queued as a removable thumbnail**, so several regions (up to 5, e.g. a problem statement and its examples) can be attached to one question; the next question you type, speak or Ask carries them to a vision-capable model ("solve the coding problem on screen"). |
 | **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. |
-| **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog, navigable with hotkeys. |
-| **Overlay UX** | Frameless, always-on-top, translucent, draggable bar; collapsible answer panel; opacity and move hotkeys; resize grip. |
+| **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog, navigable with hotkeys, and **exportable to Markdown** (one session or all of it, or straight to the clipboard). |
+| **Overlay UX** | Frameless, always-on-top, translucent, draggable bar; collapsible answer panel; tabbed settings (Server / Speech / Behaviour / Hotkeys); opacity and move hotkeys; resize grip; hi-DPI-aware thumbnails and an optional **interface scale** for 100–200 % sessions. |
 | **Hotkeys** | 14 global actions, editable **in the settings dialog** (empty value disables one) with validation. |
+| **Languages** | The interface ships an offline translation layer (English + German today) with `auto` following the desktop locale; adding a language is dropping one JSON file in [`client/opengirgit/translations/`](client/opengirgit/translations/README.md) — no Qt/`.qm` toolchain needed. |
 | **Stealth** | On Windows the windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab. During region selection the real cursor is blanked and a stand-in copy stays parked at the anchor, so a screen share sees an ordinary motionless cursor. |
 | **Auth** | Local email-OTP accounts issued by your own server (SMTP optional — dev mode prints the code). |
 | **Packaging** | `run.sh` / `run.ps1` bootstrap everything with one command; a PyInstaller **one-folder Windows build** (client + server in one exe) is produced by CI on release tags. |
@@ -83,14 +84,16 @@ opengirgit/
 ├── LICENSE                    ← MIT
 ├── run.sh / run.ps1           ← one-command launcher (venv + deps + server + client)
 ├── docs/
-│   └── API.md                 ← HTTP/SSE API reference implemented by server/
+│   └── API.md                 ← HTTP/SSE/WS API reference implemented by server/
+├── tools/
+│   └── collect_strings.py     ← regenerates the translation catalog (en.json)
 ├── packaging/                 ← PyInstaller spec + frozen entry point
 │   ├── opengirgit.spec
 │   ├── launcher.py            ← starts bundled server, then the client
 │   └── README.md
 ├── server/                    ← FastAPI backend (auth, LLM proxy, STT tokens)
 │   ├── app/
-│   │   ├── main.py            ← routes
+│   │   ├── main.py            ← routes (incl. the /api/llm/ws WebSocket)
 │   │   ├── config.py          ← pydantic-settings (env + .env)
 │   │   ├── security.py        ← OTP hashing, JWT
 │   │   ├── db.py              ← SQLite (users, OTPs, feedback)
@@ -103,12 +106,12 @@ opengirgit/
 │   └── .env.example
 ├── client/                    ← PySide6 desktop overlay
 │   ├── opengirgit/
-│   │   ├── app.py             ← bootstrap & wiring
+│   │   ├── app.py             ← bootstrap & wiring (locale, scale, transport)
 │   │   ├── overlay.py         ← the overlay window (answers, thumbnails)
-│   │   ├── dialogs.py         ← login / info / settings / history / feedback
-│   │   ├── api.py             ← HTTP client (auth, SSE chat/vision, retries)
+│   │   ├── dialogs.py         ← login / info / tabbed settings / history / feedback
+│   │   ├── api.py             ← HTTP client (auth, SSE + WebSocket streaming, retries)
 │   │   ├── workers.py         ← QThread helpers
-│   │   ├── audio.py           ← WASAPI loopback / mic capture
+│   │   ├── audio.py           ← WASAPI / PulseAudio-monitor / mic capture
 │   │   ├── dsp.py             ← downmix + linear resampler (pure numpy)
 │   │   ├── stt.py             ← local faster-whisper (with partials) & Deepgram
 │   │   ├── capture.py         ← screen region selection + decoy cursor
@@ -116,11 +119,13 @@ opengirgit/
 │   │   ├── render.py          ← markdown → HTML; math/mermaid extraction for the web view
 │   │   ├── webview.py         ← optional QtWebEngine answer view (KaTeX + mermaid)
 │   │   ├── assets/            ← vendored KaTeX + mermaid JS/CSS/fonts (MIT, offline)
+│   │   ├── i18n.py            ← tiny offline catalog-based translation layer
+│   │   ├── translations/      ← en.json (inventory) + de.json (+ README for translators)
 │   │   ├── stealth.py         ← WDA_EXCLUDEFROMCAPTURE / tool-window
 │   │   ├── hotkeys.py         ← global hotkeys + validation
 │   │   ├── prompts.py         ← context formatting
 │   │   ├── resume.py          ← PDF/DOCX/TXT text extraction
-│   │   ├── stores.py          ← ~/.opengirgit JSON stores
+│   │   ├── stores.py          ← ~/.opengirgit JSON stores (+ Markdown export)
 │   │   └── config.py          ← settings dataclass
 │   ├── main.py
 │   ├── requirements.txt
@@ -132,9 +137,11 @@ opengirgit/
 
 ## Quick start
 
-Requirements: Python **3.10+** (3.11–3.13 recommended). Windows is required for
-*system-audio* capture and the stealth APIs; on Linux/macOS the app still runs
-with microphone input (and without capture exclusion).
+Requirements: Python **3.10+** (3.11–3.13 recommended). **System-audio
+loopback** works on Windows (WASAPI) and Linux (PulseAudio/PipeWire monitor via
+`parec`); on macOS it needs a virtual loopback driver (BlackHole). The
+capture-exclusion stealth APIs are Windows-only — elsewhere the app still runs,
+with microphone (or monitor) input and without screen-share invisibility.
 
 ### One command (recommended)
 
@@ -266,6 +273,9 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `web_render` | `true` | Render LaTeX math and mermaid diagrams in the embedded QtWebEngine view (falls back to plain text when unavailable; set `false` to save memory). |
 | `opacity` | `0.96` | Overlay opacity. |
 | `screenshot_prompt` | built-in | Prompt used when you attach screenshot(s) with no typed question. |
+| `chat_transport` | `auto` | `auto` (WebSocket, falls back to SSE) · `sse` · `websocket`. |
+| `ui_language` | `en` | Translation catalog code (`en`, `de`, …) or `auto` for the desktop locale. |
+| `ui_scale` | `0` | Interface scale in percent (`0` follows the system/session DPI; 100–200 preset). Applied at startup — takes effect after a restart. |
 | `hotkeys` | see below | Hotkey combos as `"Shift+Alt+K"` strings; editable in the settings dialog (an empty value disables a hotkey). |
 
 Files written by the client: `~/.opengirgit/{config,credentials,context,conversations,resume_cache}.json`.
@@ -352,6 +362,14 @@ entirely: your server bills nothing.
   a CDN-based renderer it keeps working offline.
 * **Multi-region screenshots**: each capture is queued as a removable thumbnail
   (up to 5) and the next question carries them all to the vision model.
+* **WebSocket chat transport** in addition to SSE (auto-upgrade with SSE
+  fallback, cancellation, retries) — the original only speaks WebSocket.
+* **Session export to Markdown** — one session, the whole history or straight to
+  the clipboard; the original keeps history inside its own UI only.
+* **Linux system-audio loopback** via the PulseAudio/PipeWire monitor (the
+  original's loopback is Windows-only) and a documented macOS path (BlackHole).
+* **Interface translations**: a dependency-free, offline catalog layer — English
+  and German ship today, and adding a language is one JSON file.
 * Latency when configured equivalently (Deepgram + cloud LLM): the plumbing
   adds ~20 ms end-to-end (see measurements below).
 
@@ -359,7 +377,8 @@ entirely: your server bills nothing.
 
 * **Zero-setup distribution** for non-technical users on Windows: an installer
   vs. `run.ps1` / the CI-built PyInstaller folder.
-* **Pixel-level UI polish** (fonts, spacing, transitions).
+* **Custom visual design** (hand-drawn art, animations, bespoke icon set) — our
+  polish work covers typography, DPI handling and states, not illustrations.
 * **Default answer quality** depends on the model you point it at; there is no
   vendor-tuned default stack.
 
@@ -372,8 +391,9 @@ from the engine and model you configure.
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 88 offline tests, no network needed
-ruff check server client tests
+pytest                                    # 126 offline tests, no network needed
+ruff check server client tests packaging tools
+python tools/collect_strings.py --check   # translation inventory is in sync
 ```
 
 Test layout:
@@ -383,15 +403,18 @@ Test layout:
 | `tests/test_server_prompts.py` | system prompt, history filtering, vision payloads |
 | `tests/test_server_security.py` | OTP hashing, JWT issue/verify/expiry/refresh leeway |
 | `tests/test_server_resume.py` | JSON extraction + normalisation of parsed resumes |
+| `tests/test_server_ws.py` | the `/api/llm/ws` WebSocket endpoint: auth, chat/vision frames, validation, error frames |
 | `tests/test_client_dsp.py` | down-mix, resampling (single-pass == chunked), levels |
 | `tests/test_client_config.py` | settings defaults, clamping, env overrides, context formatting |
-| `tests/test_client_stores.py` | bounded history, atomic writes, credential fallback |
+| `tests/test_client_stores.py` | bounded history, atomic writes, credential fallback, Markdown export |
+| `tests/test_client_audio.py` | PulseAudio/PipeWire monitor parsing, `parec` device ids, platform hints |
+| `tests/test_client_i18n.py` | catalog loading/fallback, German completeness, placeholder parity, `collect_strings --check` |
 | `tests/test_client_hotkeys.py` | hotkey parsing + editor validation (skipped without PySide6) |
-| `tests/test_client_api.py` | SSE assembly, error events, cancellation, retry policy, URLs |
+| `tests/test_client_api.py` | SSE assembly, WebSocket transport (auto/forced, cancel, fallback), retry policy, URLs |
 | `tests/test_client_render.py` | markdown→HTML rendering, pygments highlighting, math/mermaid extraction, fallback |
 | `tests/test_client_webview.py` | KaTeX + mermaid rendering in the embedded QtWebEngine (offscreen; skipped without WebEngine) |
-| `tests/test_client_ui.py` | headless (offscreen) construction, streaming, capture queue, web-view swap, thumbnails, decoy cursor, dialogs |
-| `tests/e2e/run_e2e.py` | boots the real server + mock model and drives the client HTTP layer |
+| `tests/test_client_ui.py` | headless (offscreen) construction, streaming, capture queue, web-view swap, thumbnails, decoy cursor, dialogs, export, retranslation |
+| `tests/e2e/run_e2e.py` | boots the real server + mock model and drives the client HTTP layer (SSE + WebSocket) |
 | `tests/e2e/stt_smoke.py` | optional live STT check (file replay or live capture, needs faster-whisper) |
 
 The UI tests run under `QT_QPA_PLATFORM=offscreen` and are automatically skipped
@@ -416,12 +439,20 @@ python tests/e2e/stt_smoke.py --wav speech.wav --model base.en --expect "hello"
 # real-time replay + latency measurement with a specific silence gate:
 python tests/e2e/stt_smoke.py --wav speech.wav --model tiny.en --realtime --silence 0.4
 
-# live capture — on Windows this records speaker output via WASAPI loopback:
+# live capture — system audio loopback:
+#   Windows: WASAPI loopback      Linux: PulseAudio/PipeWire monitor (parec)
 python tests/e2e/stt_smoke.py --capture 8 --source system
 
 # live capture from a microphone on an explicit device:
 python tests/e2e/stt_smoke.py --capture 8 --source microphone --device input:3
 ```
+
+On the default `system` source the script picks the default device itself:
+WASAPI loopback on Windows, the default sink's monitor on Linux (PulseAudio or
+PipeWire via `pactl`), and on macOS the configured microphone — route the system
+output into BlackHole and select it there. Verified end-to-end on PipeWire:
+`--capture 16 --source system` transcribed a played speech clip word-perfect
+with 8 live partial updates.
 
 The first run downloads the model; the script exits 0 only when a transcript
 (and the `--expect` substring, if given) came back.
@@ -480,6 +511,12 @@ lowest-latency option.
 | Decoy cursor (region selection) | ✅ blank/dummy/glide logic + pixmap fallback offscreen; ⏳ GDI bitmap and share appearance on Windows |
 | Hotkey editor | ✅ validation + save flow offscreen; registration path unchanged |
 | Feedback dialog | ✅ payload test + offscreen send flow |
+| WebSocket transport | ✅ in-process server tests (auth, chat/vision frames, validation, error frames) + `run_e2e.py` streams chat/vision over WS and cancels mid-stream + verified against the **frozen bundle** (chat over ws/sse/auto, vision over ws, unauthenticated socket rejected); ⏳ reverse-proxied `wss://` deployments |
+| Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case) |
+| Translations (i18n) | ✅ catalog/fallback/placeholder tests, offscreen German retranslation; ⏳ native-speaker review of the German values |
+| Linux system audio (`parec`) | ✅ verified live on PipeWire: `stt_smoke.py --capture 16 --source system` recorded the speaker monitor and transcribed the JFK clip **word-perfect** (8 partial updates, VAD gate intact); `pactl` parsing/device ids unit-tested |
+| Interface scale / hi-DPI | ✅ setting plumb-through + DPR-aware thumbnails; ⏳ visual review at 125–200 % |
+| Pixel polish (states, scrollbars, tabs) | ✅ hover/focus/checked styles, themed scrollbars and tooltips, tabbed settings — offscreen construction tests; ⏳ visual pass on Windows at 100–150 % |
 | One-command launchers | ✅ `run.sh`: real venv check, server start, health wait, clean shutdown; ⏳ `run.ps1` on Windows |
 | Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; ⏳ Windows exe from CI on a release tag |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
@@ -488,18 +525,21 @@ lowest-latency option.
 | Stealth (`WDA_EXCLUDEFROMCAPTURE`, Windows-only) | ⏳ verify with a screen-share |
 | Deepgram engine | ⏳ needs an API key (`stt_engine=deepgram`) |
 | Real model provider | ✅ any OpenAI-compatible endpoint (mock used in CI; point `.env` at your provider) |
-| Visual polish (fonts, sizes, DPI) | ⏳ designed for Windows at 100–150 % scaling; not pixel-verified |
 
 ## Roadmap
 
 - [x] Streaming partial transcripts from local whisper (chunked re-transcription).
 - [x] Math (LaTeX, KaTeX) and mermaid diagram rendering via a bundled offline web view.
 - [x] Multi-region screenshots (queued thumbnails; up to 5 images per question).
+- [x] Optional WebSocket chat transport (auto-upgrade, SSE fallback, cancellation).
+- [x] Session export to Markdown (one session, all sessions, clipboard).
+- [x] Translation layer with drop-in JSON catalogs (English + German shipped).
+- [x] Linux system-audio loopback via PulseAudio/PipeWire monitor sources.
+- [x] Interface scale setting + hi-DPI thumbnails, tabbed settings, themed controls.
 - [ ] Verify and iterate the Windows PyInstaller bundle on real hardware (CI builds it on tags).
-- [ ] macOS audio capture (`ScreenCaptureKit`/BlackHole docs) and Linux PipeWire loopback helper.
-- [ ] Optional WebSocket chat transport (the server already speaks SSE; WS is a drop-in).
-- [ ] Session recording/export to Markdown.
-- [ ] Translations (the strings are all in `client/opengirgit/`, no i18n layer yet).
+- [ ] macOS system-audio capture beyond the documented BlackHole path (e.g. ScreenCaptureKit).
+- [ ] A third-party translation PR flow (the German catalog has not been native-reviewed).
+- [ ] Optional packaging niceties: an installer, auto-update-free version interstitial.
 
 ## License
 
