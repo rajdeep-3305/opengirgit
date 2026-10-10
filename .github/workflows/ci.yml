@@ -34,6 +34,46 @@ jobs:
       - name: Unit tests
         run: pytest -q
 
+  windows-tests:
+    # The client is Windows-first (WASAPI loopback, RegisterHotKey, capture
+    # exclusion). Installing the real client requirements here also verifies
+    # that the Windows install path (PyAudioWPatch wheels etc.) works; the
+    # platform-independent suite is a hard gate, while the Qt/WebEngine GUI
+    # tests stay informational until they have been checked on real hardware
+    # (docs/WINDOWS-CHECKLIST.md).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            client/requirements.txt
+            server/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r client/requirements.txt -r server/requirements.txt
+          pip install pytest ruff
+
+      - name: Lint
+        run: ruff check server client tests packaging tools
+
+      - name: Unit tests (core)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q --ignore tests/test_client_ui.py --ignore tests/test_client_webview.py --ignore tests/test_client_hotkeys.py
+
+      - name: Qt / WebEngine GUI tests (informational)
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu --disable-dev-shm-usage"
+        run: pytest -q tests/test_client_ui.py tests/test_client_webview.py tests/test_client_hotkeys.py
+
   client-import-sanity:
     runs-on: ubuntu-latest
     steps:
