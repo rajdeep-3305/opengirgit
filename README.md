@@ -5,9 +5,10 @@ your speakers, transcribes speech in real time, and streams AI answers into a
 small always-on-top panel that you can keep out of screen shares.
 
 OpenGirGit is a **clean-room, MIT-licensed re-implementation** of the architecture
-used by the commercial Windows app *GirGit AI* (reverse-engineering report:
-[`REPORT.md`](REPORT.md)). It contains **no vendor code, no vendor keys, and no
-billing** — you run your own server, plug in your own model, and pay nobody.
+used by the commercial Windows app *GirGit AI*, written from observed behaviour
+(the reverse-engineering notes stay in the maintainer's working copy and are not
+published). It contains **no vendor code, no vendor keys, and no billing** — you
+run your own server, plug in your own model, and pay nobody.
 
 ```
 ┌──────────────── your machine ─────────────────┐        ┌─────── optional ───────┐
@@ -67,12 +68,11 @@ billing** — you run your own server, plug in your own model, and pay nobody.
 ## What is *not* in this repo
 
 * **No vendor binaries, strings, assets or decompiled code.** Everything here was
-  written from scratch; `REPORT.md` only *describes* the original's behaviour.
+  written from scratch from the original's *observable behaviour* — the
+  reverse-engineering notes are kept locally and deliberately not published.
 * **No subscription/billing/payment logic.** The original debits ₹5 ≈ 1 minute of
   usage per 60-second heartbeat and sells prepaid minute packs through Razorpay;
-  none of that exists here, and no code from it was reused. See
-  [`REPORT.md` §7](REPORT.md#7-billing--payment--full-evidence-trail-subscription-every-5-minutes)
-  for the full evidence trail of that mechanic.
+  none of that exists here, and no code from it was reused.
 * **No telemetry, no auto-update, no remote kill-switch.**
 
 ## Repository layout
@@ -80,7 +80,6 @@ billing** — you run your own server, plug in your own model, and pay nobody.
 ```
 opengirgit/
 ├── README.md                  ← you are here
-├── REPORT.md                  ← reverse-engineering report of the original app
 ├── LICENSE                    ← MIT
 ├── run.sh / run.ps1           ← one-command launcher (venv + deps + server + client)
 ├── docs/
@@ -325,13 +324,14 @@ application shortcuts):
 
 ## Relationship to the original app
 
-`REPORT.md` documents the reverse engineering of *GirGit AI* 1.2.45 (PyInstaller +
-PySide6, Windows) from its shipped artifacts and public endpoints. Key findings
-reproduced here as architecture (not as code): system-audio loopback → direct
-Deepgram WS with server-minted tokens; SSE/WS LLM chat with server-side system
-prompt; client-side context blob; capture-excluding overlay windows.
+OpenGirGit 1.x was written from a reverse-engineering study of *GirGit AI* 1.2.45
+(PyInstaller + PySide6, Windows) — its shipped artifacts and public endpoints.
+That study (kept locally, not published) produced the architecture reproduced here
+as original code: system-audio loopback → direct Deepgram WS with server-minted
+tokens; SSE/WS LLM chat with a server-side system prompt; client-side context
+blob; capture-excluding overlay windows.
 
-**Billing, per the report:** the only purchase mechanism in the original is
+**Billing, per the study:** the only purchase mechanism in the original is
 prepaid usage at **₹5 per minute** (`rate_per_minute_paise=500`), sold in minute
 packs (min 15, max 1000) through Razorpay, with a **60-second heartbeat that
 debits 1 minute** per beat and a 10-minute server-side free trial. There is no
@@ -495,6 +495,12 @@ machines; disable with `partials=false`). Deepgram remains the word-level
 lowest-latency option.
 
 ### Verification status
+
+Windows-only paths are tracked in a hands-on checklist: **[`docs/WINDOWS-CHECKLIST.md`](docs/WINDOWS-CHECKLIST.md)**
+(launcher, WASAPI loopback, stealth, decoy cursor, hotkeys under a meeting app,
+the packaged exe). The CI **windows-tests** job installs the client
+requirements on `windows-latest` and runs the core suite as a first line of
+defence.
 
 | Area | Verification |
 |---|---|

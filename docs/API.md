@@ -5,8 +5,8 @@ JSON unless stated otherwise. Authenticated endpoints expect
 `Authorization: Bearer <access_token>`.
 
 The API shape intentionally mirrors the endpoints the original client consumed
-(see [`../REPORT.md` §8](../REPORT.md#8-backend-api-surface-client-observed)),
-minus everything billing/payment related.
+(observed during a reverse-engineering study of the shipped app; notes kept
+locally), minus everything billing/payment related.
 
 ---
 

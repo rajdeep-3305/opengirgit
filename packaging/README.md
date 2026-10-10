@@ -59,4 +59,6 @@ Useful defaults set by the launcher:
   Deepgram if the target machine is offline.
 * **Windows semantics** (WASAPI loopback, `RegisterHotKey`, capture exclusion)
   can only be exercised on Windows; build and test the exe there. CI does this
-  on every release tag (see `.github/workflows/release.yml`).
+  on every release tag (see `.github/workflows/release.yml`, which also has a
+  manual *Run workflow* trigger), and the hands-on pass is scripted in
+  [`docs/WINDOWS-CHECKLIST.md`](../docs/WINDOWS-CHECKLIST.md).
