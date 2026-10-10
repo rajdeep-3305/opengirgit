@@ -27,6 +27,10 @@ data/
 *.db-shm
 *.log
 
+# Reverse-engineering notes for the original app (deliberately not published;
+# the MIT code in this repository is a clean-room re-implementation).
+REPORT.md
+
 # Model weights (downloaded by faster-whisper)
 models/
 *.bin
