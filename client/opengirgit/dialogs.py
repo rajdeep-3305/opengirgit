@@ -369,6 +369,7 @@ class SettingsDialog(QDialog, _WorkerOwner):
         *,
         api: ApiClient | None = None,
         email: str = "",
+        hotkey_state: tuple[str, str] | None = None,
     ) -> None:
         QDialog.__init__(self, parent)
         _WorkerOwner.__init__(self)
@@ -377,6 +378,7 @@ class SettingsDialog(QDialog, _WorkerOwner):
         self.settings = settings
         self._api = api
         self._email = email
+        self._hotkey_state = hotkey_state
         self._working = AppSettings.from_dict(settings.to_dict())
 
         layout = QVBoxLayout(self)
@@ -514,6 +516,20 @@ class SettingsDialog(QDialog, _WorkerOwner):
         # -- Hotkeys -------------------------------------------------------- #
         hotkeys_page = QWidget()
         hotkeys_page_layout = QVBoxLayout(hotkeys_page)
+        if self._hotkey_state is not None:
+            state, detail = self._hotkey_state
+            status_text = {
+                "windows": tr("global hotkeys: system-wide"),
+                "x11": tr("global hotkeys: system-wide (X11)"),
+                "portal": tr("global hotkeys: waiting for the desktop to confirm"),
+                "portal-ready": tr("global hotkeys: system-wide (desktop portal)"),
+                "focus": tr("global hotkeys: only while this window has focus"),
+            }.get(state, tr("global hotkeys: only while this window has focus"))
+            if detail:
+                status_text = f"{status_text} — {detail}"
+            status = QLabel(status_text)
+            status.setWordWrap(True)
+            hotkeys_page_layout.addWidget(status)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)

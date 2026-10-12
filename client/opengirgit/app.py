@@ -11,10 +11,10 @@ from PySide6.QtWidgets import QApplication, QDialog
 from . import stealth
 from .api import ApiClient, ApiError
 from .audio import AudioCapture, AudioError, default_device_id, list_devices, missing_device_hint
-from .capture import RegionSelector, grab_screen_region, pixmap_to_jpeg_b64
+from .capture import RegionSelector, desktop_pixmap, last_capture_error, pixmap_to_jpeg_b64
 from .config import AppSettings, load_dotenv_if_present
 from .dialogs import HistoryDialog, InfoDialog, LoginDialog, SettingsDialog
-from .hotkeys import GlobalHotkeyManager
+from .hotkeys import IS_WINDOWS, GlobalHotkeyManager
 from .i18n import set_language, tr
 from .overlay import MOVE_STEP, OPACITY_STEP, SCROLL_STEP, OverlayWindow
 from .prompts import format_interview_context
@@ -178,7 +178,21 @@ class AppController(QObject):
         if self._selector is not None:
             self._overlay.set_status(tr("region selection already open"))
             return
-        self._selector = RegionSelector(decoy=self._settings.decoy_cursor)
+        background = None
+        if not IS_WINDOWS:
+            # Linux/macOS capture before the overlay appears and let the
+            # selection crop the frozen image: Wayland only supports screen
+            # capture through the desktop portal, and on X11 this keeps the
+            # dimming overlay out of the picture.
+            background = desktop_pixmap()
+            if background is None:
+                message = tr("could not capture the screen")
+                detail = last_capture_error()
+                if detail:
+                    message = f"{message} — {detail}"
+                self._overlay.set_status(message, error=True)
+                return
+        self._selector = RegionSelector(decoy=self._settings.decoy_cursor, background=background)
         self._selector.region_selected.connect(self._on_region_selected)
         self._selector.selection_cancelled.connect(self._on_selection_cancelled)
         self._selector.showFullScreen()
@@ -189,9 +203,9 @@ class AppController(QObject):
         self._selector = None
 
     def _on_region_selected(self, rect) -> None:
-        self._selector = None
-        pixmap = grab_screen_region(rect)
-        if pixmap.isNull():
+        selector, self._selector = self._selector, None
+        pixmap = selector.capture_selection() if selector is not None else None
+        if pixmap is None or pixmap.isNull():
             self._overlay.set_status(tr("could not capture that region"), error=True)
             return
         encoded = pixmap_to_jpeg_b64(pixmap)
@@ -212,6 +226,12 @@ class AppController(QObject):
                 ),
                 error=True,
             )
+            return
+        detail = self._hotkeys.backend_detail()
+        if detail:
+            # Not user-facing on purpose: on Wayland the portal refuses
+            # terminal launches, which would nag on every start.
+            print(f"opengirgit: global hotkeys are window-local ({detail})", flush=True)
 
     def _on_hotkey(self, action: str) -> None:
         dispatch = {
@@ -238,7 +258,12 @@ class AppController(QObject):
 
     def open_settings(self) -> None:
         previous_scale = self._settings.ui_scale
-        dialog = SettingsDialog(self._settings, api=self._api, email=self._email)
+        dialog = SettingsDialog(
+            self._settings,
+            api=self._api,
+            email=self._email,
+            hotkey_state=(self._hotkeys.backend_state(), self._hotkeys.backend_detail()),
+        )
         if dialog.exec() == QDialog.Accepted:
             self._listener.stop()
             self._listener.deleteLater()
@@ -337,6 +362,10 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("OpenGirGit")
     app.setApplicationVersion(APP_VERSION)
+    # Matches packaging/org.opengirgit.OpenGirGit.desktop: on Wayland this is the
+    # window's app id, which is how the desktop ties the window (and the portal
+    # shortcut scope) to the launcher entry.
+    app.setDesktopFileName("org.opengirgit.OpenGirGit")
     app.setQuitOnLastWindowClosed(False)
 
     credentials = CredentialsStore()
