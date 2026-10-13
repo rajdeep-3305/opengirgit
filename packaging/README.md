@@ -33,6 +33,26 @@ Useful defaults set by the launcher:
 | `HOST` / `PORT` | `127.0.0.1` / `8000` |
 | `OPENGIRGIT_SERVER_URL` | `http://HOST:PORT` |
 
+## Linux bundle
+
+The same spec builds on Linux (`dist/OpenGirGit/OpenGirGit`, one folder; CI
+attaches it as `OpenGirGit-linux-x64.tar.gz` on release tags). Unpack and run
+
+```sh
+./OpenGirGit/install-linux.sh          # registers the launcher entry + icon
+```
+
+The install script is what makes **global hotkeys work on Wayland**: the
+GlobalShortcuts portal scopes bindings to an app id, which the desktop derives
+from the systemd scope of a grid-launched app plus the installed `.desktop`
+file. Launch OpenGirGit from the application grid afterwards; terminal launches
+keep window-local shortcuts (the settings dialog shows which backend is
+active). For a source checkout the same trick works when systemd is present:
+
+```sh
+systemd-run --user --scope -u app-org.opengirgit.OpenGirGit-$$ ./run.sh
+```
+
 ## Notes and caveats
 
 * **Size.** The folder is large (PySide6 + QtWebEngine + faster-whisper/ctranslate2
@@ -62,3 +82,9 @@ Useful defaults set by the launcher:
   on every release tag (see `.github/workflows/release.yml`, which also has a
   manual *Run workflow* trigger), and the hands-on pass is scripted in
   [`docs/WINDOWS-CHECKLIST.md`](../docs/WINDOWS-CHECKLIST.md).
+* **Linux bundle.** Built and smoke-tested on this machine (Ubuntu 24.04,
+  Wayland): server healthy from the executable, `--check-render` OK, portal
+  capture and X11 grabs work from the frozen build. CI builds it on
+  ubuntu-22.04 for an older glibc baseline; the release workflow runs the same
+  health smoke test. Hands-on pass:
+  [`docs/LINUX-CHECKLIST.md`](../docs/LINUX-CHECKLIST.md).
