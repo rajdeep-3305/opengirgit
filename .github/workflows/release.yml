@@ -5,6 +5,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: write   # softprops/action-gh-release attaches the artifacts to the release
+
 jobs:
   windows-bundle:
     runs-on: windows-latest
@@ -68,4 +71,85 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/OpenGirGit-windows-x64.zip
+          generate_release_notes: true
+
+  linux-bundle:
+    runs-on: ubuntu-22.04   # oldest glibc we target
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Qt/WebEngine runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            libnss3 libasound2 libportaudio2 \
+            libdrm2 libgbm1 libxshmfence1 \
+            libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxi6 \
+            libxcursor1 libxinerama1 libcups2 libpango-1.0-0
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r client/requirements.txt -r server/requirements.txt pyinstaller
+
+      - name: Build bundle
+        run: pyinstaller packaging/opengirgit.spec --noconfirm --distpath dist --workpath build
+
+      - name: Add the desktop launcher and install script
+        run: |
+          cp packaging/org.opengirgit.OpenGirGit.desktop \
+             packaging/org.opengirgit.OpenGirGit.svg \
+             packaging/install-linux.sh \
+             dist/OpenGirGit/
+          chmod +x dist/OpenGirGit/install-linux.sh
+
+      - name: Smoke test (bundled server becomes healthy, client starts headless)
+        run: |
+          export PORT=8123
+          export QT_QPA_PLATFORM=offscreen
+          ./dist/OpenGirGit/OpenGirGit &
+          pid=$!
+          ok=0
+          for i in $(seq 1 90); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "bundle exited early"; wait "$pid"; exit 1
+            fi
+            if curl -fsS "http://127.0.0.1:8123/api/health" >/dev/null; then ok=1; break; fi
+            sleep 0.5
+          done
+          if [ "$ok" != 1 ]; then
+            echo "bundled API server did not become healthy"
+            kill "$pid" || true
+            exit 1
+          fi
+          kill "$pid"
+          wait "$pid" 2>/dev/null || true
+          echo "smoke test passed"
+
+      # Non-fatal: QtWebEngine headless startup can be flaky on CI runners, but
+      # a failure here is worth seeing (math/diagram rendering in the real build).
+      - name: Math/diagram self-test in the bundled build
+        continue-on-error: true
+        run: |
+          QT_QPA_PLATFORM=offscreen ./dist/OpenGirGit/OpenGirGit --check-render
+
+      - name: Tarball
+        run: tar -C dist -czf dist/OpenGirGit-linux-x64.tar.gz OpenGirGit
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenGirGit-linux-x64
+          path: dist/OpenGirGit-linux-x64.tar.gz
+          if-no-files-found: error
+
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/OpenGirGit-linux-x64.tar.gz
           generate_release_notes: true
