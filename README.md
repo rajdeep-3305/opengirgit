@@ -113,7 +113,8 @@ opengirgit/
 │   │   ├── audio.py           ← WASAPI / PulseAudio-monitor / mic capture
 │   │   ├── dsp.py             ← downmix + linear resampler (pure numpy)
 │   │   ├── stt.py             ← local faster-whisper (with partials) & Deepgram
-│   │   ├── capture.py         ← screen region selection + decoy cursor
+│   │   ├── capture.py         ← screen region selection (live + frozen modes) + decoy cursor
+│   │   ├── portal.py          ← xdg-desktop-portal client (Wayland capture + hotkeys)
 │   │   ├── decoy.py           ← share-safe cursor (GDI bitmap / drawn arrow)
 │   │   ├── render.py          ← markdown → HTML; math/mermaid extraction for the web view
 │   │   ├── webview.py         ← optional QtWebEngine answer view (KaTeX + mermaid)
@@ -131,16 +132,18 @@ opengirgit/
 │   └── .env.example
 ├── tests/                     ← offline unit tests (server units + client units)
 │   └── e2e/                   ← mock OpenAI-compatible model + end-to-end script
-└── .github/workflows/         ← ci.yml (lint/tests/e2e) + release.yml (Windows bundle)
+└── .github/workflows/         ← ci.yml (lint/tests/e2e) + release.yml (Windows + Linux bundles)
 ```
 
 ## Quick start
 
-Requirements: Python **3.10+** (3.11–3.13 recommended). **System-audio
-loopback** works on Windows (WASAPI) and Linux (PulseAudio/PipeWire monitor via
-`parec`); on macOS it needs a virtual loopback driver (BlackHole). The
-capture-exclusion stealth APIs are Windows-only — elsewhere the app still runs,
-with microphone (or monitor) input and without screen-share invisibility.
+Requirements: Python **3.10+** (3.11–3.13 recommended). Windows and Linux are
+both first-class; macOS runs too (see the [platform table](#platform-support)).
+**System-audio loopback** works on Windows (WASAPI) and Linux
+(PulseAudio/PipeWire monitor via `parec`); on macOS it needs a virtual loopback
+driver (BlackHole). The capture-exclusion stealth APIs are Windows-only —
+elsewhere the app still runs, with microphone (or monitor) input and without
+screen-share invisibility.
 
 ### One command (recommended)
 
@@ -158,9 +161,10 @@ instant), starts the API server, waits for `/api/health`, then opens the client.
 `HOST`, `PORT`, `PYTHON` and `OPENGIRGIT_SERVER_URL` override the defaults;
 `--no-server` / `--no-client` run only one half.
 
-Prebuilt Windows bundles (one folder, client + server, no Python needed) are
-attached to GitHub releases by CI — see [`packaging/`](packaging/README.md) for
-building your own.
+Prebuilt **Windows and Linux** bundles (one folder, client + server, no Python
+needed) are attached to GitHub releases by CI — the Linux tarball ships
+`install-linux.sh`, which registers the launcher entry the desktop needs for
+portal hotkeys. See [`packaging/`](packaging/README.md) for building your own.
 
 ### Manual setup
 
@@ -281,11 +285,26 @@ Files written by the client: `~/.opengirgit/{config,credentials,context,conversa
 `credentials.json` is plaintext and contains a bearer token — keep it out of
 version control (the repository `.gitignore` already ignores it).
 
+## Platform support
+
+| Capability | Windows | Linux | macOS |
+|---|---|---|---|
+| Overlay, dialogs, streaming answers | ✅ | ✅ X11 and Wayland | ✅ |
+| Region screenshots | ✅ native grab | ✅ X11 native grab; Wayland via `org.freedesktop.portal.Screenshot` (frozen image shown while selecting) | ✅ with Screen Recording permission |
+| System-wide hotkeys | ✅ `RegisterHotKey` | ✅ X11 `XGrabKey`; Wayland via `org.freedesktop.portal.GlobalShortcuts` — needs the `.desktop` launcher entry, see [`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md) | ⚠️ window-local shortcuts |
+| System-audio loopback | ✅ WASAPI | ✅ PulseAudio/PipeWire monitor (`parec`) | ⚠️ needs BlackHole (documented) |
+| Capture exclusion (screen-share invisibility) | ✅ `WDA_EXCLUDEFROMCAPTURE` | ❌ no such API — the decoy cursor is the mitigation | ❌ |
+| Taskbar / Alt-Tab hiding | ✅ `WS_EX_TOOLWINDOW` | — (overlay is a normal always-on-top window) | — |
+
 ## Global hotkeys
 
-Defaults (all remappable in the settings dialog or `config.json`; on Windows they
-are true system-wide hotkeys registered with `RegisterHotKey`, elsewhere they are
-application shortcuts):
+Defaults (all remappable in the settings dialog or `config.json`). They are
+**system-wide** on Windows (`RegisterHotKey`), on X11 (`XGrabKey`, with the
+NumLock/CapsLock variants and server-side auto-repeat suppression) and on
+Wayland through the `GlobalShortcuts` portal. On Wayland the desktop shows its
+own confirmation dialog and owns the bindings, so the app must be started from
+its launcher entry (the portal scopes shortcuts by desktop id; a plain terminal
+launch keeps window-local shortcuts, which the settings dialog reports):
 
 | Action | Default | Notes |
 |---|---|---|
@@ -310,6 +329,11 @@ application shortcuts):
   `WS_EX_TOOLWINDOW` so it stays out of the taskbar and Alt-Tab. On Windows
   builds older than 19041 the flag degrades and the window appears as a black
   rectangle in shares — the same caveat the original has.
+* **Screen-share invisibility is Windows-only.** Linux and macOS expose no
+  supported API for excluding a window from screen capture, so on those systems
+  the overlay *is* visible to a screen share; the decoy cursor remains the only
+  mitigation there. (On Wayland the frozen screenshot flow still keeps the
+  selection overlay out of the app's own captures.)
 * **Decoy cursor (`decoy_cursor=true`).** While you drag the screenshot region,
   the real pointer is blanked on the selection overlay and a stand-in copy
   (the actual system cursor bitmap on Windows, read via GDI) stays parked at
@@ -496,11 +520,13 @@ lowest-latency option.
 
 ### Verification status
 
-Windows-only paths are tracked in a hands-on checklist: **[`docs/WINDOWS-CHECKLIST.md`](docs/WINDOWS-CHECKLIST.md)**
-(launcher, WASAPI loopback, stealth, decoy cursor, hotkeys under a meeting app,
-the packaged exe). The CI **windows-tests** job installs the client
-requirements on `windows-latest` and runs the core suite as a first line of
-defence.
+Platform-specific paths are tracked in hands-on checklists:
+**[`docs/WINDOWS-CHECKLIST.md`](docs/WINDOWS-CHECKLIST.md)** (launcher, WASAPI
+loopback, stealth, decoy cursor, hotkeys under a meeting app, the packaged exe)
+and **[`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md)** (Wayland portal
+capture and hotkeys, X11 grabs, `parec` loopback, the Linux bundle). The CI
+**windows-tests** job installs the client requirements on `windows-latest` and
+runs the core suite as a first line of defence.
 
 | Area | Verification |
 |---|---|
@@ -521,10 +547,13 @@ defence.
 | Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case) |
 | Translations (i18n) | ✅ catalog/fallback/placeholder tests, offscreen German retranslation; ⏳ native-speaker review of the German values |
 | Linux system audio (`parec`) | ✅ verified live on PipeWire: `stt_smoke.py --capture 16 --source system` recorded the speaker monitor and transcribed the JFK clip **word-perfect** (8 partial updates, VAD gate intact); `pactl` parsing/device ids unit-tested |
+| Wayland screenshots (portal) | ✅ verified live on GNOME 51/Wayland: the portal returns a 2880×1800 pixmap (DPR 2.0) and its file is removed afterwards; the frozen-selector crop math is unit-tested (scale, multi-monitor offset, null background); ⏳ your own walkthrough in [`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md) |
+| Wayland hotkeys (GlobalShortcuts portal) | ✅ request/response plumbing and trigger conversion (`ALT+SHIFT+a`) unit-tested, `CreateSession` verified live; the portal refuses app-id-less launches, which the manager detects and reports; ⏳ end-to-end binding from the launcher entry (desktop confirmation dialog) |
+| X11 hotkeys (`XGrabKey` via `libX11`) | ✅ verified live against XWayland: grabs accepted, invalid specs and conflicts rejected cleanly, `XSync` error snap-back unit-tested with a fake grabber; ⏳ a native X11 session |
 | Interface scale / hi-DPI | ✅ setting plumb-through + DPR-aware thumbnails; ⏳ visual review at 125–200 % |
 | Pixel polish (states, scrollbars, tabs) | ✅ hover/focus/checked styles, themed scrollbars and tooltips, tabbed settings — offscreen construction tests; ⏳ visual pass on Windows at 100–150 % |
 | One-command launchers | ✅ `run.sh`: real venv check, server start, health wait, clean shutdown; ⏳ `run.ps1` on Windows |
-| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; ⏳ Windows exe from CI on a release tag |
+| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; the release workflow also builds that bundle as a Linux tarball with the `.desktop` launcher and `install-linux.sh`; ⏳ Windows exe from CI on a release tag |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
 | WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
 | Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 14 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
@@ -542,6 +571,7 @@ defence.
 - [x] Translation layer with drop-in JSON catalogs (English + German shipped).
 - [x] Linux system-audio loopback via PulseAudio/PipeWire monitor sources.
 - [x] Interface scale setting + hi-DPI thumbnails, tabbed settings, themed controls.
+- [x] Windows/Linux parity: Wayland portal screenshots, X11 `XGrabKey` + portal hotkeys, frozen region selection, Linux release artifact.
 - [ ] Verify and iterate the Windows PyInstaller bundle on real hardware (CI builds it on tags).
 - [ ] macOS system-audio capture beyond the documented BlackHole path (e.g. ScreenCaptureKit).
 - [ ] A third-party translation PR flow (the German catalog has not been native-reviewed).
