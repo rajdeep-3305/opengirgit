@@ -326,7 +326,13 @@ def desktop_pixmap() -> QPixmap | None:
         pixmap = portal_screenshot()
         if pixmap is not None:
             return pixmap
-    pixmap = grab_screen_region(screen.geometry(), screen)
+    # Native fallback: grab the whole virtual desktop, matching the portal's
+    # frame of reference (the selector maps this against virtualGeometry()).
+    virtual = screen.virtualGeometry()
+    if virtual.width() > 0 and virtual.height() > 0:
+        pixmap = grab_screen_region(virtual, screen)
+    else:
+        pixmap = grab_screen_region(screen.geometry(), screen)
     if pixmap.isNull():
         if not _last_capture_error:
             _last_capture_error = "screen capture is not supported by this display server"

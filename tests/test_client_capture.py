@@ -150,9 +150,29 @@ def test_desktop_pixmap_prefers_the_portal_on_wayland(qt_app, monkeypatch):
 def test_desktop_pixmap_falls_back_to_a_native_grab(qt_app, monkeypatch):
     monkeypatch.setattr(capture, "portal_capture_needed", lambda: True)
     monkeypatch.setattr(capture, "portal_screenshot", lambda: None)
+    monkeypatch.setattr(capture, "grab_screen_region", lambda rect, screen=None: QPixmap(8, 6))
     pixmap = capture.desktop_pixmap()
     assert pixmap is not None and not pixmap.isNull()
     assert capture.last_capture_error() == ""
+
+
+def test_native_fallback_grabs_the_virtual_desktop(qt_app, monkeypatch):
+    """The native fallback must match the portal's frame of reference."""
+    from PySide6.QtGui import QGuiApplication
+
+    screen = QGuiApplication.primaryScreen()
+    assert screen is not None
+    rects: list[QRect] = []
+
+    def fake_grab(rect, target=None):
+        rects.append(QRect(rect))
+        return QPixmap(8, 6)
+
+    monkeypatch.setattr(capture, "portal_capture_needed", lambda: True)
+    monkeypatch.setattr(capture, "portal_screenshot", lambda: None)
+    monkeypatch.setattr(capture, "grab_screen_region", fake_grab)
+    capture.desktop_pixmap()
+    assert rects == [screen.virtualGeometry()]
 
 
 def test_desktop_pixmap_reports_when_both_backends_fail(qt_app, monkeypatch):
