@@ -239,14 +239,17 @@ class RegionSelector(QWidget):
         bottom = round((logical_y + selection.height()) * scale_y)
         return QRect(left, top, max(1, right - left), max(1, bottom - top))
 
-    def capture_selection(self) -> QPixmap | None:
-        """The pixmap for the current selection, in this selector's mode.
+    def capture_selection(self, selection: QRect | None = None) -> QPixmap | None:
+        """The pixmap for *selection* (default: the current drag).
 
         Frozen mode crops the pre-captured background; live mode grabs the
-        screen.  Call before the selector is destroyed.
+        screen.  ``region_selected`` carries the rectangle because the selector
+        clears its drag state before the signal is delivered.  Call before the
+        selector is destroyed.
         """
-        selection = self._selection_rect()
-        if selection is None or self._screen is None:
+        if selection is None:
+            selection = self._selection_rect()
+        if selection is None or selection.isNull() or self._screen is None:
             return None
         if self._background is not None:
             pixmap = self._background.copy(self._background_source(selection))

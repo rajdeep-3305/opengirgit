@@ -204,7 +204,7 @@ class AppController(QObject):
 
     def _on_region_selected(self, rect) -> None:
         selector, self._selector = self._selector, None
-        pixmap = selector.capture_selection() if selector is not None else None
+        pixmap = selector.capture_selection(rect) if selector is not None else None
         if pixmap is None or pixmap.isNull():
             self._overlay.set_status(tr("could not capture that region"), error=True)
             return

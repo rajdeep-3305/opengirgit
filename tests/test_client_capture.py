@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 from opengirgit import capture  # noqa: E402
-from PySide6.QtCore import QPoint, QRect  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QPixmap  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -91,6 +91,42 @@ def test_capture_selection_is_none_before_any_drag(qt_app):
     selector = capture.RegionSelector(decoy=False, background=_background(40, 30))
     assert selector.capture_selection() is None
     selector.close()
+
+
+class _MouseEvent:
+    """Minimal stand-in for a QMouseEvent on the selector."""
+
+    def __init__(self, x: int, y: int) -> None:
+        self._point = QPointF(x, y)
+
+    def position(self) -> QPointF:
+        return self._point
+
+    def button(self) -> Qt.MouseButton:
+        return Qt.LeftButton
+
+
+def test_emitted_rectangle_captures_after_the_drag_state_is_cleared(qt_app):
+    """The selector clears its drag before emitting; the rect must still work."""
+    color = QColor(1, 2, 3)
+    selector = capture.RegionSelector(decoy=False, background=_background(1600, 1600, color))
+    selector._background_origin = QPoint(0, 0)  # noqa: SLF001
+    selector._background_scale_x = 2.0  # noqa: SLF001
+    selector._background_scale_y = 2.0  # noqa: SLF001
+
+    received: list[QRect] = []
+    selector.region_selected.connect(received.append)
+
+    selector.mousePressEvent(_MouseEvent(50, 40))
+    selector.mouseMoveEvent(_MouseEvent(150, 140))
+    selector.mouseReleaseEvent(_MouseEvent(150, 140))
+
+    assert received == [QRect(50, 40, 101, 101)]
+    assert selector.capture_selection() is None  # drag state is cleared
+    pixmap = selector.capture_selection(received[0])
+    assert pixmap is not None
+    assert (pixmap.width(), pixmap.height()) == (202, 202)
+    assert pixmap.toImage().pixelColor(100, 100) == color
 
 
 # -- pre-capture backends --------------------------------------------------- #
