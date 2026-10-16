@@ -87,3 +87,15 @@ def test_export_without_sessions_is_still_valid_markdown(tmp_path, monkeypatch):
     export = store.export_markdown(None)
     assert export.startswith("# OpenGirGit conversation export")
     assert "No conversations stored yet." in export
+
+
+def test_store_files_are_owner_only(tmp_path, monkeypatch):
+    """credentials/context/history must not be world-readable on POSIX."""
+    import os
+    import stat
+
+    if os.name != "posix":
+        return  # chmod only flips the read-only bit on Windows
+    target = tmp_path / "credentials.json"
+    stores._atomic_write(target, {"access_token": "secret"})  # noqa: SLF001
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600

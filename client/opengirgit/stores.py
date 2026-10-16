@@ -33,6 +33,10 @@ def _atomic_write(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:  # owner-only: these files hold the bearer token, resume and history
+        os.chmod(tmp, 0o600)
+    except OSError:  # pragma: no cover - Windows/exotic filesystems
+        pass
     os.replace(tmp, path)
 
 
