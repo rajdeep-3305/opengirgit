@@ -31,6 +31,12 @@ Rules:
   copilot."""
 
 
+#: Placeholder secret shipped in ``server/.env.example``.  A non-loopback bind
+#: refuses to start while this (or any key under 32 chars) is in use — see
+#: ``check_startup_security`` in :mod:`app.main`.
+DEFAULT_JWT_SECRET = "dev-secret-change-me-use-32-bytes-minimum"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -46,7 +52,7 @@ class Settings(BaseSettings):
     cors_origins: str = ""
 
     # Auth
-    jwt_secret: str = "dev-secret-change-me-use-32-bytes-minimum"
+    jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7
     otp_ttl_seconds: int = 300

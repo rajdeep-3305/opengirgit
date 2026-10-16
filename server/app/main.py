@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import db, llm, stt
 from . import resume as resume_mod
-from .config import get_settings
+from .config import DEFAULT_JWT_SECRET, Settings, get_settings
 from .mailer import send_otp_email
 from .prompts import build_chat_messages, build_vision_messages
 from .security import (
@@ -51,9 +51,46 @@ from .security import (
 
 settings = get_settings()
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+
+def _is_loopback(host: str) -> bool:
+    return host.strip().lower() in _LOOPBACK_HOSTS
+
+
+def check_startup_security(settings: Settings) -> None:
+    """Guard the two footguns that matter once the server leaves loopback.
+
+    Without SMTP, ``/api/auth/otp/send`` hands the login code to whoever asks,
+    and with the shipped placeholder secret anyone can mint tokens.  Both are
+    acceptable for a single-user loopback install (the client shows the code),
+    so a non-loopback bind refuses to start with either; loopback prints a
+    one-line warning instead.
+    """
+    problems: list[str] = []
+    if settings.jwt_secret == DEFAULT_JWT_SECRET:
+        problems.append("JWT_SECRET is still the shipped default")
+    elif len(settings.jwt_secret) < 32:
+        problems.append("JWT_SECRET is shorter than 32 characters")
+    if settings.dev_otp_echo:
+        problems.append(
+            "ALLOW_DEV_OTP_ECHO is on without SMTP, so login codes go to anyone who asks"
+        )
+    if not problems:
+        return
+    if not _is_loopback(settings.host):
+        raise RuntimeError(
+            f"refusing to serve on {settings.host!r}: "
+            + "; ".join(problems)
+            + ". Configure SMTP (or ALLOW_DEV_OTP_ECHO=false), set a real JWT_SECRET, "
+            "or keep HOST=127.0.0.1."
+        )
+    print(f"warning: {'; '.join(problems)} — safe on loopback only", flush=True)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    check_startup_security(settings)
     db.init_db()
     yield
 
@@ -65,13 +102,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list or ["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS is off unless origins are configured: the desktop client speaks plain
+# HTTP and does not need it, and a wildcard would let any website drive this
+# API from a browser (including reading the dev OTP echo).
+if settings.cors_origin_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # --------------------------------------------------------------------------- #
