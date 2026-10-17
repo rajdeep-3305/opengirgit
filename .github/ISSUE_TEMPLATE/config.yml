@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/rajdeep-3305/opengirgit/security/advisories/new
+    about: Please report security issues privately — see SECURITY.md, not as a public issue.

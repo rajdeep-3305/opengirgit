@@ -1,0 +1,60 @@
+name: Bug report
+description: Something broke, or behaves differently than documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Bugs that come with a platform, exact steps and
+        the real output are usually fixed much faster.
+  - type: input
+    id: os
+    attributes:
+      label: OS and desktop
+      placeholder: "e.g. Windows 11 23H2, or Ubuntu 24.04 / GNOME Wayland"
+    validations:
+      required: true
+  - type: input
+    id: install
+    attributes:
+      label: How are you running it?
+      placeholder: "release bundle v0.1.0 / from source with run.sh or run.ps1"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Overlay / answers
+        - Screenshots / capture
+        - Speech-to-text / audio
+        - Hotkeys
+        - Server / API
+        - Packaging / install
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, console output or screenshots
+      description: "Anything that helps: terminal output, `--check-render` output, screenshots."
+    validations:
+      required: false
