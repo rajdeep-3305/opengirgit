@@ -590,3 +590,7 @@ MIT — see [`LICENSE`](LICENSE). No vendor code, strings, assets or binaries fr
 the original application are included or redistributed. "GirGit AI" is only
 referenced descriptively for interoperability research; this project is not
 affiliated with or endorsed by its authors.
+
+Release bundles redistribute third-party components (Qt/PySide6 under LGPL-3.0,
+vendored KaTeX/mermaid under MIT, …) — each under its own license, listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

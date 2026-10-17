@@ -58,7 +58,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Host "::warning ::--check-render exited with $LASTEXITCODE" }
 
       - name: Zip
-        run: Compress-Archive -Path dist/OpenGirGit -DestinationPath dist/OpenGirGit-windows-x64.zip
+        run: |
+          Copy-Item THIRD-PARTY-NOTICES.md dist/OpenGirGit/
+          Compress-Archive -Path dist/OpenGirGit -DestinationPath dist/OpenGirGit-windows-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -106,6 +108,7 @@ jobs:
              packaging/org.opengirgit.OpenGirGit.svg \
              packaging/install-linux.sh \
              dist/OpenGirGit/
+          cp THIRD-PARTY-NOTICES.md dist/OpenGirGit/
           chmod +x dist/OpenGirGit/install-linux.sh
 
       - name: Smoke test (bundled server becomes healthy, client starts headless)
