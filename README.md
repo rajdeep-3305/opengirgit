@@ -56,13 +56,13 @@ run your own server, plug in your own model, and pay nobody.
 | **Answers** | Streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…), over **SSE** or the optional **WebSocket** transport (auto, with SSE fallback). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). The `code:` combo rewrites the shown answer's code in the picked language and **caches each variant per answer**. |
 | **Vision** | Hotkey → select a screen region. Each selection is **queued as a removable thumbnail**, so several regions (up to 5, e.g. a problem statement and its examples) can be attached to one question; the next question you type, speak or Ask carries them to a vision-capable model ("solve the coding problem on screen"). |
 | **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. The JD and notes boxes also accept **attached files**: documents are text-extracted locally (never uploaded), images are transcribed by the vision model and folded in. |
-| **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog, navigable with hotkeys, and **exportable to Markdown** (one session or all of it, or straight to the clipboard). |
+| **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog (sessions are named after their first question), navigable with hotkeys, and **exportable to Markdown** (one session or all of it, or straight to the clipboard). |
 | **Overlay UX** | Frameless, always-on-top, translucent, draggable bar with a short slide animation for collapse/expand and a startup fade; **click-through mode** (the mouse works through the overlay to the app underneath — `Shift+Alt+C` returns control); a **streaming preview popup** teases the answer while the panel is collapsed; tabbed settings (Server / Speech / Behaviour / Hotkeys); opacity and move hotkeys; resize grip; hi-DPI-aware thumbnails and an optional **interface scale** for 100–200 % sessions. |
 | **Hotkeys** | 15 global actions (the original's 14 plus click-through), editable **in the settings dialog** (empty value disables one) with validation. |
 | **Languages** | The interface ships an offline translation layer (English + German today) with `auto` following the desktop locale; adding a language is dropping one JSON file in [`client/opengirgit/translations/`](client/opengirgit/translations/README.md) — no Qt/`.qm` toolchain needed. |
 | **Stealth** | On Windows the windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab. During region selection the real cursor is blanked and a stand-in copy stays parked at the anchor, so a screen share sees an ordinary motionless cursor. |
 | **Auth** | Local email-OTP accounts issued by your own server (SMTP optional — dev mode prints the code). |
-| **Packaging** | `run.sh` / `run.ps1` bootstrap everything with one command; a PyInstaller **one-folder Windows build** (client + server in one exe) is produced by CI on release tags. |
+| **Packaging** | `run.sh` / `run.ps1` bootstrap everything with one command; CI builds a PyInstaller **one-folder Windows build** (client + server in one exe) and a **per-user installer** (Inno Setup, no admin prompt, German + English wizard) on release tags, alongside a one-folder Linux tarball. |
 | **Zero billing** | There is no payment code, no minute accounting and no phone-home anywhere in this repository. |
 
 ## What is *not* in this repo
@@ -255,7 +255,7 @@ All server settings are environment variables (or `server/.env`); see
 | `DEEPGRAM_API_KEY` | – | If set, `/api/stt/token` mints short-lived Deepgram tokens. |
 | `DEEPGRAM_MODEL` / `DEEPGRAM_LANGUAGE` | `nova-2` / `en` | Deepgram stream parameters. |
 | `DEEPGRAM_TOKEN_TTL_SECONDS` | `600` | Minted token lifetime. |
-| `APP_VERSION` | `0.1.0` | Reported by `/api/version`. |
+| `APP_VERSION` | `0.2.0` | Reported by `/api/version`. |
 
 ### Client settings
 
@@ -421,8 +421,9 @@ entirely: your server bills nothing.
 
 **Where the original is still ahead**
 
-* **Zero-setup distribution** for non-technical users on Windows: an installer
-  vs. `run.ps1` / the CI-built PyInstaller folder.
+* **Code-signed distribution**: our folder, installer and exe are all unsigned,
+  so Windows SmartScreen shows a one-time "unknown publisher" prompt. Signing
+  needs a paid certificate, which free CI does not provide.
 * **Custom visual design** (hand-drawn art, animations, bespoke icon set) — our
   polish work covers typography, DPI handling and states, not illustrations.
 * **Default answer quality** depends on the model you point it at; there is no
@@ -437,7 +438,7 @@ from the engine and model you configure.
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 127 offline tests, no network needed
+pytest                                    # 191 offline tests, no network needed
 ruff check server client tests packaging tools
 python tools/collect_strings.py --check   # translation inventory is in sync
 ```
@@ -569,7 +570,7 @@ runs the core suite as a first line of defence.
 | UI animations (collapse, preview, startup fade) | ✅ end-state tests offscreen; ⏳ visual smoothness on Windows/X11 |
 | Feedback dialog | ✅ payload test + offscreen send flow |
 | WebSocket transport | ✅ in-process server tests (auth, chat/vision frames, validation, error frames) + `run_e2e.py` streams chat/vision over WS and cancels mid-stream + verified against the **frozen bundle** (chat over ws/sse/auto, vision over ws, unauthenticated socket rejected); ⏳ reverse-proxied `wss://` deployments |
-| Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case) |
+| Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case); sessions are auto-named after their first question (truncation, empty and explicit-title cases tested) |
 | Code-language rewrites (per-answer variants) | ✅ rewrite/cache/restore/instruction/failure paths offscreen + variant persistence in the store; ⏳ visual check against a live provider |
 | Context file attachments | ✅ document extraction (no model call), image JPEG re-encode, stubbed vision transcription and save flow offscreen; ⏳ a real model transcribing a photographed page |
 | Translations (i18n) | ✅ catalog/fallback/placeholder tests, offscreen German retranslation; ⏳ native-speaker review of the German values |
@@ -581,7 +582,9 @@ runs the core suite as a first line of defence.
 | Interface scale / hi-DPI | ✅ setting plumb-through + DPR-aware thumbnails; ⏳ visual review at 125–200 % |
 | Pixel polish (states, scrollbars, tabs) | ✅ hover/focus/checked styles, themed scrollbars and tooltips, tabbed settings — offscreen construction tests; ⏳ visual pass on Windows at 100–150 % |
 | One-command launchers | ✅ `run.sh`: real venv check, server start, health wait, clean shutdown; ⏳ `run.ps1` on Windows |
-| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; the release workflow also builds that bundle as a Linux tarball with the `.desktop` launcher and `install-linux.sh`; ⏳ Windows exe from CI on a release tag |
+| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; the release workflow also builds that bundle as a Linux tarball with the `.desktop` launcher and `install-linux.sh`; ⏳ hands-on Windows pass with the CI-built zip |
+| Windows installer (Inno Setup, per-user) | ✅ CI compiles and attaches `…-setup.exe` on release tags; per-user layout, shortcuts, uninstaller and license page are declarative; ⏳ install → launch → upgrade → uninstall on real Windows |
+| TLS trust-store fallback + classified connection errors | ✅ unit tests: a certificate error is retried once against the OS-store ∪ certifi bundle on all three transports, then reported as a TLS diagnostic; DNS/refused/handshake failures get distinct messages; ⏳ a real corporate-proxy/antivirus environment |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
 | WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
 | Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 15 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
@@ -601,9 +604,11 @@ runs the core suite as a first line of defence.
 - [x] Interface scale setting + hi-DPI thumbnails, tabbed settings, themed controls.
 - [x] Windows/Linux parity: Wayland portal screenshots, X11 `XGrabKey` + portal hotkeys, frozen region selection, Linux release artifact.
 - [x] Click-through mode, collapsed-answer streaming preview, startup pre-warm and fluid animations.
-- [ ] Verify and iterate the Windows PyInstaller bundle on real hardware (CI builds it on tags).
+- [x] Per-user Windows installer (Inno Setup, no admin prompt) with app icon, built by CI on release tags.
+- [x] OS-trust-store TLS fallback (corporate proxies / antivirus roots) with classified connection errors; history sessions auto-titled.
+- [ ] Verify and iterate the Windows bundle and installer on real hardware (CI builds both on tags).
 - [ ] A third-party translation PR flow (the German catalog has not been native-reviewed).
-- [ ] Optional packaging niceties: an installer, auto-update-free version interstitial.
+- [ ] Optional packaging nicety: a version interstitial without auto-update.
 
 ## License
 

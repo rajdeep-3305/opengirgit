@@ -2,9 +2,9 @@
 
 Everything in `README.md` → *Verification status* that is still marked **⏳** is
 either Windows-only (WASAPI loopback, `RegisterHotKey`, `WDA_EXCLUDEFROMCAPTURE`,
-the GDI decoy cursor, `run.ps1`, the packaged exe) or needs a screen share to
-judge. This file is the script for that pass: work top to bottom, tick what
-passes, and report what does not (see *Reporting* at the end).
+the GDI decoy cursor, `run.ps1`, the packaged exe, the installer) or needs a
+screen share to judge. This file is the script for that pass: work top to
+bottom, tick what passes, and report what does not (see *Reporting* at the end).
 
 CI already covers part of it: the **windows-tests** job in
 `.github/workflows/ci.yml` installs `client/requirements.txt` on
@@ -126,6 +126,31 @@ or download the CI artifact (Actions → **release** → *Run workflow*, or a `v
 - [ ] `OpenGirGit.exe --check-render` prints `render check: OK`.
 - [ ] `OpenGirGit.exe --print-settings` / `--list-devices` work.
 - [ ] Unpacked folder is self-contained (no Python installed on the machine used to test).
+- [ ] The exe shows the OpenGirGit icon in Explorer and the taskbar.
+
+### The installer
+
+Download `OpenGirGit-windows-x64-setup.exe` (same release/Actions run) and run it:
+
+- [ ] Setup completes **without an admin prompt**; files land in
+      `%LOCALAPPDATA%\Programs\OpenGirGit`.
+      SmartScreen warns once ("unknown publisher") — *More info → Run anyway* is expected
+      for an unsigned installer.
+- [ ] The MIT license page appears; the wizard can be switched between English and German.
+- [ ] The start-menu entry launches the app; the optional desktop-icon task works.
+- [ ] Re-running the installer over an existing install replaces the files and does not
+      duplicate shortcuts (upgrade path).
+- [ ] Uninstall (Settings → Apps, or the start-menu uninstaller) removes the program folder
+      and shortcuts. A `.env` you placed next to the exe is left behind — that is your
+      configuration, not a leak.
+
+### HTTPS behind a corporate proxy (optional, if you have one)
+
+- [ ] With an HTTPS-inspecting proxy or antivirus on the machine, set `server_url` to the
+      `https://` endpoint: the app answers anyway (it retries once against the union of
+      Windows' certificate store and the bundled certifi roots). With an untrusted
+      certificate you get the explicit *"TLS certificate … is not trusted"* status instead
+      of a generic failure.
 
 ## 9. Click-through, preview popup, pre-warm
 
@@ -166,6 +191,7 @@ For each failing item collect:
 * the console output (`run.ps1` window, or the exe's console),
 * `%LOCALAPPDATA%\OpenGirGit\*.log` if present, and a screenshot.
 
-Known non-issues (no report needed): SmartScreen warning for the unsigned exe,
-the one-time whisper model download on first mic use, and a missing Deepgram key
-(the local engine is the default, the Deepgram row in the README needs a key).
+Known non-issues (no report needed): SmartScreen warnings for the unsigned exe and
+installer, the one-time whisper model download on first mic use, and a missing
+Deepgram key (the local engine is the default, the Deepgram row in the README
+needs a key).
