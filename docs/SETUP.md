@@ -22,7 +22,8 @@ Open the **[latest release page](https://github.com/rajdeep-3305/opengirgit/rele
 | Windows, if you can't run installers | `OpenGirGit-windows-x64.zip` | unpack anywhere, run `OpenGirGit.exe` inside |
 | Linux, 64-bit (Ubuntu 22.04+, Fedora 36+, …) | `OpenGirGit-linux-x64.tar.gz` | unpack, then register the app icon (below) |
 
-Almost every PC made after 2010 is 64-bit.
+Almost every PC made after 2010 is 64-bit. (macOS isn't supported — Windows
+and Linux only.)
 
 ## 2. Install
 
