@@ -186,6 +186,17 @@ class ConversationStore:
         del session["items"][:-MAX_ITEMS_PER_SESSION]
         self._flush()
 
+    def set_variant(self, question: str, answer: str, language: str, variant: str) -> None:
+        """Remember a rewrite of one stored answer (matched by question + answer)."""
+        session = self._current()
+        if session is None:
+            return
+        for item in reversed(session["items"]):
+            if item.get("question") == question and item.get("answer") == answer:
+                item.setdefault("variants", {})[language] = variant
+                self._flush()
+                return
+
     def _current(self) -> dict[str, Any] | None:
         for session in self._sessions:
             if session.get("id") == self._current_id:

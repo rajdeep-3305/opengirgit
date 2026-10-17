@@ -145,6 +145,92 @@ def test_overlay_reports_errors(qt_app, tmp_path):
     overlay.close()
 
 
+def test_language_switcher_rewrites_and_caches_variants(qt_app, tmp_path, monkeypatch):
+    stub = _StubApi()
+    monkeypatch.setattr("opengirgit.stores.CONVERSATIONS_PATH", tmp_path / "c.json")
+    conversations = ConversationStore()
+
+    overlay = OverlayWindow(stub, _settings(tmp_path), conversations, lambda: "ctx")
+    overlay.submit_question("Write fib")
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+    assert overlay._answer_buffer == "Answer to: Write fib"  # noqa: SLF001
+
+    # picking a language rewrites the shown answer through the model
+    overlay._language_combo.setCurrentText("Python")  # noqa: SLF001
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+    rewrite_calls = [call for call in stub.calls if "written in Python" in call]
+    assert len(rewrite_calls) == 1
+    assert "Write fib" in rewrite_calls[0]
+    assert "in Python" in overlay._answer_buffer  # noqa: SLF001
+    assert "Python" in overlay._items[0]["variants"]  # noqa: SLF001
+    stored = conversations.sessions()[0]["items"][0]
+    assert stored["variants"]["Python"] == overlay._answer_buffer  # noqa: SLF001
+
+    # "auto" brings the original back; a cached variant returns instantly
+    overlay._language_combo.setCurrentText("auto")  # noqa: SLF001
+    assert overlay._answer_buffer == "Answer to: Write fib"  # noqa: SLF001
+    assert overlay._worker is None  # noqa: SLF001
+    overlay._language_combo.setCurrentText("Python")  # noqa: SLF001
+    assert overlay._worker is None  # noqa: SLF001 - served from the cache
+    assert "in Python" in overlay._answer_buffer  # noqa: SLF001
+    assert len([call for call in stub.calls if "written in Python" in call]) == 1
+    overlay.close()
+
+
+def test_language_pick_before_a_question_rides_along(qt_app, tmp_path, monkeypatch):
+    stub = _StubApi()
+    monkeypatch.setattr("opengirgit.stores.CONVERSATIONS_PATH", tmp_path / "c.json")
+    conversations = ConversationStore()
+
+    overlay = OverlayWindow(stub, _settings(tmp_path), conversations, lambda: "ctx")
+    overlay._language_combo.setCurrentText("Rust")  # noqa: SLF001
+    assert overlay._worker is None  # noqa: SLF001 - nothing to rewrite yet
+
+    overlay.submit_question("Write fib")
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+    assert "(If the answer contains code, write it in Rust.)" in stub.calls[0]
+    # the instruction has done its job: the switcher starts over on "auto"
+    assert overlay._language_combo.currentText() == "auto"  # noqa: SLF001
+    overlay.close()
+
+
+def test_failed_rewrite_restores_the_original_answer(qt_app, tmp_path, monkeypatch):
+    class _Flaky(_StubApi):
+        def chat_stream(self, message, **kwargs):  # type: ignore[override]
+            if "written in Python" in message:
+                raise RuntimeError("no quota")
+            return super().chat_stream(message, **kwargs)
+
+    monkeypatch.setattr("opengirgit.stores.CONVERSATIONS_PATH", tmp_path / "c.json")
+    conversations = ConversationStore()
+    overlay = OverlayWindow(_Flaky(), _settings(tmp_path), conversations, lambda: "ctx")
+    overlay.submit_question("Write fib")
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+
+    overlay._language_combo.setCurrentText("Python")  # noqa: SLF001
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+    assert overlay._answer_buffer == "Answer to: Write fib"  # noqa: SLF001
+    assert overlay._language_combo.currentText() == "auto"  # noqa: SLF001
+    assert "no quota" in overlay._status.text()  # noqa: SLF001
+    assert not (overlay._items[0].get("variants") or {})  # noqa: SLF001
+    overlay.close()
+
+
 def test_dialogs_construct(qt_app, tmp_path):
     settings = _settings(tmp_path)
     login = LoginDialog(settings)

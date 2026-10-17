@@ -78,6 +78,21 @@ def format_resume_data(resume: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+def rewrite_answer_prompt(question: str, answer: str, language: str) -> str:
+    """One self-contained request to re-do an answer's code in ``language``.
+
+    The original question and answer travel with the prompt, so the rewrite can
+    be sent without the surrounding conversation history.
+    """
+    return (
+        f"Rewrite the answer below so that every code block is written in {language}. "
+        "Keep the explanation, structure and meaning unchanged — translate only the "
+        "code itself. Reply with the complete rewritten answer in Markdown and "
+        "nothing else.\n\n"
+        f"Question:\n{question.strip()}\n\nAnswer:\n{answer.strip()}"
+    )
+
+
 def format_interview_context(
     resume: dict[str, Any] | None,
     company: str = "",

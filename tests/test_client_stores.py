@@ -21,6 +21,19 @@ def test_conversation_store_bounds_and_persists(tmp_path, monkeypatch):
     assert sessions[0]["items"][0]["answer"] == "a1"
 
 
+def test_conversation_store_rewrite_variants(tmp_path, monkeypatch):
+    monkeypatch.setattr(stores, "CONVERSATIONS_PATH", tmp_path / "c.json")
+    store = stores.ConversationStore()
+    store.add_item("q1", "a1")
+    store.set_variant("q1", "a1", "Python", "a1 in Python")
+    store.set_variant("q1", "a1", "Java", "a1 in Java")
+    store.set_variant("missing", "a1", "Go", "ignored")
+
+    reloaded = stores.ConversationStore()
+    item = reloaded.sessions()[0]["items"][0]
+    assert item["variants"] == {"Python": "a1 in Python", "Java": "a1 in Java"}
+
+
 def test_conversation_store_caps_sessions(tmp_path, monkeypatch):
     monkeypatch.setattr(stores, "CONVERSATIONS_PATH", tmp_path / "c.json")
     store = stores.ConversationStore()

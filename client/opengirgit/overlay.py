@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
@@ -27,6 +28,7 @@ from .capture import pixmap_from_b64
 from .config import AppSettings
 from .i18n import tr
 from .preview import StreamPreview
+from .prompts import rewrite_answer_prompt
 from .stores import ConversationStore
 from .workers import StreamWorker
 
@@ -172,11 +174,15 @@ class OverlayWindow(QWidget):
         self._answer_buffer = ""
         self._streaming = False
         self._pending: dict[str, str] | None = None
-        self._items: list[dict[str, str]] = []
+        self._items: list[dict[str, Any]] = []
         self._index = -1
         self._last_auto_question = ""
         self._last_auto_time = 0.0
         self._drag_offset: QPoint | None = None
+
+        # The code-language combo: which rewrite of the shown answer is visible.
+        self._variant_language = "auto"
+        self._rewrite_item: dict[str, Any] | None = None
 
         # Session-only click-through mode (mouse events reach the app below).
         self._click_through = False
@@ -306,6 +312,7 @@ class OverlayWindow(QWidget):
         header.addWidget(self._code_label)
         self._language_combo = QComboBox()
         self._language_combo.addItems(CODE_LANGUAGES)
+        self._language_combo.currentIndexChanged.connect(self._on_language_changed)
         header.addWidget(self._language_combo)
 
         self._copy_button = QPushButton("copy")
@@ -374,7 +381,9 @@ class OverlayWindow(QWidget):
 
         self._title_label.setText(tr("Answer"))
         self._code_label.setText(tr("code:"))
-        self._language_combo.setToolTip(tr("Ask for code in a specific language"))
+        self._language_combo.setToolTip(
+            tr("Prefer this language for code, or rewrite the current answer in it")
+        )
         self._copy_button.setText(tr("copy"))
         self._copy_button.setToolTip(tr("Copy the answer"))
         self._update_position_label()
@@ -695,9 +704,12 @@ class OverlayWindow(QWidget):
 
     def _conversation_payload(self) -> list[dict[str, str]]:
         payload: list[dict[str, str]] = []
-        for item in self._items:
+        for index, item in enumerate(self._items):
+            answer = item["answer"]
+            if index == self._index and self._variant_language != "auto":
+                answer = (item.get("variants") or {}).get(self._variant_language, answer)
             payload.append({"role": "user", "content": item["question"]})
-            payload.append({"role": "assistant", "content": item["answer"]})
+            payload.append({"role": "assistant", "content": answer})
         return payload
 
     # -------------------------------------------------------------- streaming #
@@ -805,12 +817,18 @@ class OverlayWindow(QWidget):
         if self.sender() is not self._worker:
             return
         pending = self._pending or {"question": "", "kind": "chat"}
+        if pending.get("rewrite"):
+            self._on_rewrite_done(answer)
+            return
         self._on_answer_done(pending["question"], answer, kind=pending["kind"])
 
     def _on_stream_failed(self, message: str) -> None:
         if self.sender() is not self._worker:
             return
         pending = self._pending or {"question": "", "kind": "chat"}
+        if pending.get("rewrite"):
+            self._on_rewrite_error(message)
+            return
         self._on_stream_error(pending["question"], message)
 
     def _on_stream_cancelled(self) -> None:
@@ -840,6 +858,12 @@ class OverlayWindow(QWidget):
             self._update_position_label()
             self._conversations.add_item(question, self._answer_buffer, kind)
 
+        # A fresh answer starts on the original variant; a pick before asking
+        # was an instruction for that question and has done its job.
+        self._variant_language = "auto"
+        self._rewrite_item = None
+        self._select_language("auto")
+
     def _on_stream_error(self, question: str, message: str) -> None:
         self._streaming = False
         self._worker = None
@@ -858,6 +882,111 @@ class OverlayWindow(QWidget):
             )
             self._index = len(self._items) - 1
             self._update_position_label()
+
+    # ------------------------------------------------------ language variants #
+
+    def _on_language_changed(self, _index: int = 0) -> None:
+        """The code-language combo: rewrite the shown answer, or aim the next one."""
+        if self._language_combo.signalsBlocked():
+            return
+        target = self._language_combo.currentText()
+        if target == self._variant_language:
+            return
+        if self._streaming:
+            self.set_status(tr("answer still streaming"))
+            self._select_language(self._variant_language)
+            return
+        if not self._items or self._index < 0:
+            return  # no answer yet — the pick rides along with the next question
+        item = self._items[self._index]
+        if target == "auto":
+            self._show_variant("auto", item["answer"])
+            return
+        variants = item.get("variants") or {}
+        if target in variants:
+            self._show_variant(target, variants[target], cached=True)
+            return
+        self._start_rewrite(item, target)
+
+    def _select_language(self, language: str) -> None:
+        """Set the combo without invoking the switcher."""
+        self._language_combo.blockSignals(True)
+        self._language_combo.setCurrentText(language)
+        self._language_combo.blockSignals(False)
+
+    def _show_variant(self, language: str, text: str, *, cached: bool = False) -> None:
+        self._variant_language = language
+        self._answer_buffer = text
+        self._render_answer(force=True)
+        if language == "auto":
+            self.set_status(tr("showing the original answer"))
+        elif cached:
+            self.set_status(tr("{language} variant (cached)").format(language=language))
+        else:
+            self.set_status(tr("{language} variant ready").format(language=language))
+
+    def _start_rewrite(self, item: dict[str, Any], language: str) -> None:
+        """Re-ask the model to write one existing answer's code in ``language``."""
+        question = item["question"]
+        self.cancel_stream()
+        self._pending = {"question": question, "kind": "chat", "rewrite": language}
+        self._rewrite_item = item
+        self._reset_answer_panel()
+        self._streaming = True
+        self.set_status(tr("rewriting in {language}…").format(language=language))
+
+        def stream(cancel, on_chunk):
+            return self._api.chat_stream(
+                rewrite_answer_prompt(question, item["answer"], language),
+                conversation_history=[],
+                context="",
+                on_chunk=on_chunk,
+                cancel=cancel,
+            )
+
+        self._start_worker(stream)
+
+    def _on_rewrite_done(self, answer: str) -> None:
+        self._streaming = False
+        self._worker = None
+        self._preview.hide_soon()
+        item = self._rewrite_item
+        self._rewrite_item = None
+        language = (self._pending or {}).get("rewrite") or ""
+        text = answer or self._answer_buffer
+        if item is None or item not in self._items or not language or not text.strip():
+            if item is not None:
+                self._restore_base_answer(item)
+            self.set_status(tr("rewrite failed"), error=True)
+            return
+        item.setdefault("variants", {})[language] = text
+        self._conversations.set_variant(item["question"], item["answer"], language, text)
+        if 0 <= self._index < len(self._items) and self._items[self._index] is item:
+            self._variant_language = language
+            self._select_language(language)
+            self._answer_buffer = text
+            self._flush_answer(force=True)
+        self.set_status(tr("{language} variant ready").format(language=language))
+
+    def _on_rewrite_error(self, message: str) -> None:
+        self._streaming = False
+        self._worker = None
+        self._flush_answer(force=True)
+        self._preview.hide_soon()
+        item = self._rewrite_item
+        self._rewrite_item = None
+        if item is not None:
+            self._restore_base_answer(item)
+        self.set_status(tr("error: {message}").format(message=message), error=True)
+
+    def _restore_base_answer(self, item: dict[str, Any]) -> None:
+        """Put the untouched answer back after a failed rewrite."""
+        if not (0 <= self._index < len(self._items)) or self._items[self._index] is not item:
+            return
+        self._variant_language = "auto"
+        self._select_language("auto")
+        self._answer_buffer = item["answer"]
+        self._render_answer(force=True)
 
     # --------------------------------------------------------------- history #
 
@@ -881,14 +1010,18 @@ class OverlayWindow(QWidget):
 
     def _show_index(self) -> None:
         item = self._items[self._index]
+        self._variant_language = "auto"
+        self._select_language("auto")
         self._answer_buffer = item["answer"]
         self._render_answer(force=True)
         self._update_position_label()
 
-    def load_items(self, items: list[dict[str, str]]) -> None:
+    def load_items(self, items: list[dict[str, Any]]) -> None:
         """Seed the in-memory history (used when opening the history dialog)."""
         self._items = list(items)
         self._index = len(self._items) - 1
+        self._variant_language = "auto"
+        self._select_language("auto")
         self._update_position_label()
 
     # ------------------------------------------------------------ misc verbs #
