@@ -142,6 +142,21 @@ or download the CI artifact (Actions → **release** → *Run workflow*, or a `v
 - [ ] Pre-warm: the server console shows the `/api/health` probe right after startup,
       before your first question.
 
+## 10. Code rewrite + context attachments
+
+- [ ] Ask a question that produces code, then pick `Python` in the `code:` combo: the
+      answer re-streams with the code rewritten; `auto` restores the original and
+      re-picking `Python` is instant (cached). A follow-up asked while a variant is
+      shown sees that variant.
+- [ ] Pick a language **before** asking: the next question carries the instruction and
+      the combo goes back to `auto` when the answer lands.
+- [ ] Kill the server and pick a language on a shown answer: the original answer comes
+      back with an error status (no half-rewritten answer is kept).
+- [ ] Interview details → Job description → Attach a file…: pick a `.pdf`/`.txt` — its
+      text is appended under a `--- name ---` header (no model call).
+- [ ] Attach a `.png` screenshot to *Anything else*: the vision model transcribes it and
+      the transcription is appended.
+
 ## Reporting
 
 For each failing item collect:

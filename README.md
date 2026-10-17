@@ -53,9 +53,9 @@ run your own server, plug in your own model, and pay nobody.
 |---|---|
 | **Speech input** | Captures **system audio loopback** — WASAPI on Windows, the PulseAudio/PipeWire **monitor** source on Linux (`parec`) — or a regular microphone, and resamples everything to 16 kHz mono. |
 | **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. The local engine also fills the box **while the speaker is talking** (re-transcribes every ~1.2 s, with adaptive back-off on slow machines). |
-| **Answers** | Streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…), over **SSE** or the optional **WebSocket** transport (auto, with SSE fallback). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). |
+| **Answers** | Streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…), over **SSE** or the optional **WebSocket** transport (auto, with SSE fallback). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). The `code:` combo rewrites the shown answer's code in the picked language and **caches each variant per answer**. |
 | **Vision** | Hotkey → select a screen region. Each selection is **queued as a removable thumbnail**, so several regions (up to 5, e.g. a problem statement and its examples) can be attached to one question; the next question you type, speak or Ask carries them to a vision-capable model ("solve the coding problem on screen"). |
-| **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. |
+| **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. The JD and notes boxes also accept **attached files**: documents are text-extracted locally (never uploaded), images are transcribed by the vision model and folded in. |
 | **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog, navigable with hotkeys, and **exportable to Markdown** (one session or all of it, or straight to the clipboard). |
 | **Overlay UX** | Frameless, always-on-top, translucent, draggable bar with a short slide animation for collapse/expand and a startup fade; **click-through mode** (the mouse works through the overlay to the app underneath — `Shift+Alt+C` returns control); a **streaming preview popup** teases the answer while the panel is collapsed; tabbed settings (Server / Speech / Behaviour / Hotkeys); opacity and move hotkeys; resize grip; hi-DPI-aware thumbnails and an optional **interface scale** for 100–200 % sessions. |
 | **Hotkeys** | 15 global actions (the original's 14 plus click-through), editable **in the settings dialog** (empty value disables one) with validation. |
@@ -396,6 +396,13 @@ entirely: your server bills nothing.
   pre-warm** of the DNS/TLS/WebSocket path — the original's remaining overlay
   touches, reproduced here, plus fluid animations for the panel, the preview
   and the startup fade.
+* **Per-answer code-language switcher**: picking Python/C++/Java/JavaScript…
+  re-asks the model for the shown answer with the code in that language,
+  caches the result per answer (`auto` returns to the original), and lets a
+  pick made before a question ride along as an instruction.
+* **File attachments for the interview context**: the job-description and
+  notes boxes take documents (extracted locally) and images
+  (vision-transcribed), not just pasted text.
 * **Math (LaTeX) and mermaid diagrams** render in an embedded web view, exactly
   like the original — with KaTeX and mermaid vendored locally (MIT), so unlike
   a CDN-based renderer it keeps working offline.
@@ -563,6 +570,8 @@ runs the core suite as a first line of defence.
 | Feedback dialog | ✅ payload test + offscreen send flow |
 | WebSocket transport | ✅ in-process server tests (auth, chat/vision frames, validation, error frames) + `run_e2e.py` streams chat/vision over WS and cancels mid-stream + verified against the **frozen bundle** (chat over ws/sse/auto, vision over ws, unauthenticated socket rejected); ⏳ reverse-proxied `wss://` deployments |
 | Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case) |
+| Code-language rewrites (per-answer variants) | ✅ rewrite/cache/restore/instruction/failure paths offscreen + variant persistence in the store; ⏳ visual check against a live provider |
+| Context file attachments | ✅ document extraction (no model call), image JPEG re-encode, stubbed vision transcription and save flow offscreen; ⏳ a real model transcribing a photographed page |
 | Translations (i18n) | ✅ catalog/fallback/placeholder tests, offscreen German retranslation; ⏳ native-speaker review of the German values |
 | Linux system audio (`parec`) | ✅ verified live on PipeWire: `stt_smoke.py --capture 16 --source system` recorded the speaker monitor and transcribed the JFK clip **word-perfect** (8 partial updates, VAD gate intact); `pactl` parsing/device ids unit-tested |
 | Server security policy | ✅ HMAC-hashed OTPs (`compare_digest`), per-email send cooldown, attempt cap, JWT claim validation; non-loopback binds refuse to start with the default secret or the dev OTP echo; CORS off unless configured; client stores written owner-only; unit-tested |
