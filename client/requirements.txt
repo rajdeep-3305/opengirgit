@@ -17,7 +17,7 @@ PyAudioWPatch>=0.2.12.7 ; sys_platform == "win32"
 
 # Local speech-to-text (optional but default engine). Install for offline STT;
 # alternatively set stt_engine = "deepgram" in settings and skip this.
-faster-whisper>=1.0
+faster-whisper>=1.2.1
 
 # Deepgram streaming engine
 websockets>=12,<17
