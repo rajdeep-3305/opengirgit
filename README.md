@@ -10,6 +10,10 @@ used by the commercial Windows app *GirGit AI*, written from observed behaviour
 published). It contains **no vendor code, no vendor keys, and no billing** — you
 run your own server, plug in your own model, and pay nobody.
 
+> **New here — just want to install it?** There's a plain-language,
+> no-coding-needed **[install & setup guide](docs/SETUP.md)** for Windows and
+> Linux (install → point it at a free local model → done).
+
 ```
 ┌──────────────── your machine ─────────────────┐        ┌─────── optional ───────┐
 │  client/  (PySide6 overlay)                   │        │ OpenAI / OpenRouter    │
@@ -83,6 +87,7 @@ opengirgit/
 ├── LICENSE                    ← MIT
 ├── run.sh / run.ps1           ← one-command launcher (venv + deps + server + client)
 ├── docs/
+│   ├── SETUP.md               ← plain-language install & setup guide (start here)
 │   └── API.md                 ← HTTP/SSE/WS API reference implemented by server/
 ├── tools/
 │   └── collect_strings.py     ← regenerates the translation catalog (en.json)
