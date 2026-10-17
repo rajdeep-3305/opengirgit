@@ -51,14 +51,14 @@ run your own server, plug in your own model, and pay nobody.
 
 | Area | What OpenGirGit does |
 |---|---|
-| **Speech input** | Captures **system audio loopback** — WASAPI on Windows, the PulseAudio/PipeWire **monitor** source on Linux (`parec`), BlackHole-as-microphone on macOS — or a regular microphone, and resamples everything to 16 kHz mono. |
+| **Speech input** | Captures **system audio loopback** — WASAPI on Windows, the PulseAudio/PipeWire **monitor** source on Linux (`parec`) — or a regular microphone, and resamples everything to 16 kHz mono. |
 | **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. The local engine also fills the box **while the speaker is talking** (re-transcribes every ~1.2 s, with adaptive back-off on slow machines). |
 | **Answers** | Streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…), over **SSE** or the optional **WebSocket** transport (auto, with SSE fallback). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). |
 | **Vision** | Hotkey → select a screen region. Each selection is **queued as a removable thumbnail**, so several regions (up to 5, e.g. a problem statement and its examples) can be attached to one question; the next question you type, speak or Ask carries them to a vision-capable model ("solve the coding problem on screen"). |
 | **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. |
 | **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog, navigable with hotkeys, and **exportable to Markdown** (one session or all of it, or straight to the clipboard). |
-| **Overlay UX** | Frameless, always-on-top, translucent, draggable bar; collapsible answer panel; tabbed settings (Server / Speech / Behaviour / Hotkeys); opacity and move hotkeys; resize grip; hi-DPI-aware thumbnails and an optional **interface scale** for 100–200 % sessions. |
-| **Hotkeys** | 14 global actions, editable **in the settings dialog** (empty value disables one) with validation. |
+| **Overlay UX** | Frameless, always-on-top, translucent, draggable bar with a short slide animation for collapse/expand and a startup fade; **click-through mode** (the mouse works through the overlay to the app underneath — `Shift+Alt+C` returns control); a **streaming preview popup** teases the answer while the panel is collapsed; tabbed settings (Server / Speech / Behaviour / Hotkeys); opacity and move hotkeys; resize grip; hi-DPI-aware thumbnails and an optional **interface scale** for 100–200 % sessions. |
+| **Hotkeys** | 15 global actions (the original's 14 plus click-through), editable **in the settings dialog** (empty value disables one) with validation. |
 | **Languages** | The interface ships an offline translation layer (English + German today) with `auto` following the desktop locale; adding a language is dropping one JSON file in [`client/opengirgit/translations/`](client/opengirgit/translations/README.md) — no Qt/`.qm` toolchain needed. |
 | **Stealth** | On Windows the windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab. During region selection the real cursor is blanked and a stand-in copy stays parked at the anchor, so a screen share sees an ordinary motionless cursor. |
 | **Auth** | Local email-OTP accounts issued by your own server (SMTP optional — dev mode prints the code). |
@@ -138,17 +138,16 @@ opengirgit/
 ## Quick start
 
 Requirements: Python **3.10+** (3.11–3.13 recommended). Windows and Linux are
-both first-class; macOS runs too (see the [platform table](#platform-support)).
-**System-audio loopback** works on Windows (WASAPI) and Linux
-(PulseAudio/PipeWire monitor via `parec`); on macOS it needs a virtual loopback
-driver (BlackHole). The capture-exclusion stealth APIs are Windows-only —
-elsewhere the app still runs, with microphone (or monitor) input and without
-screen-share invisibility.
+the two supported targets — **macOS is out of scope** (see the
+[platform table](#platform-support)). **System-audio loopback** works on
+Windows (WASAPI) and Linux (PulseAudio/PipeWire monitor via `parec`). The
+capture-exclusion stealth APIs are Windows-only — on Linux the app still runs,
+with microphone (or monitor) input and without screen-share invisibility.
 
 ### One command (recommended)
 
 ```bash
-./run.sh                 # Linux/macOS: venv + deps + server + client
+./run.sh                 # Linux: venv + deps + server + client
 ./run.sh --check         # validate prerequisites only
 ```
 
@@ -302,6 +301,10 @@ the other store files. Keep it out of version control (the repository
 | Capture exclusion (screen-share invisibility) | ✅ `WDA_EXCLUDEFROMCAPTURE` | ❌ no such API — the decoy cursor is the mitigation | ❌ |
 | Taskbar / Alt-Tab hiding | ✅ `WS_EX_TOOLWINDOW` | — (overlay is a normal always-on-top window) | — |
 
+> macOS entries above describe best-effort, untested behaviour — there is no
+> CI or hardware verification for it. Windows and Linux are what this project
+> builds, tests and ships.
+
 ## Global hotkeys
 
 Defaults (all remappable in the settings dialog or `config.json`). They are
@@ -318,6 +321,7 @@ launch keeps window-local shortcuts, which the settings dialog reports):
 | Ask AI (submits the manual box) | `Shift+Alt+A` | OS key-repeat suppressed |
 | Erase inputs | `Shift+Alt+D` | OS key-repeat suppressed |
 | Screenshot region (repeat to attach several) | `Shift+Alt+S` | opens a selection overlay; each region is queued as a thumbnail |
+| Click-through (mouse works through the overlay) | `Shift+Alt+C` | session-only; the same hotkey brings clicks back |
 | Previous / next answer | `Shift+Alt+[` / `Shift+Alt+]` | |
 | Scroll answer up / down | `Shift+Alt+W` / `Shift+Alt+X` | hold to repeat |
 | Move overlay up/down/left/right | `Shift+Alt+I` / `K` / `J` / `L` | hold to repeat |
@@ -384,9 +388,14 @@ entirely: your server bills nothing.
 
 **Roughly at parity**
 
-* Core flow (overlay, 14 hotkeys, capture exclusion, loopback capture,
-  screenshot→vision, resume/JD context, streaming answers, history), live
-  partial transcripts, decoy cursor during selection, editable hotkeys.
+* Core flow (overlay, the original's 14 hotkeys plus a click-through toggle,
+  capture exclusion, loopback capture, screenshot→vision, resume/JD context,
+  streaming answers, history), live partial transcripts, decoy cursor during
+  selection, editable hotkeys.
+* **Click-through mode, collapsed-answer streaming preview and a startup
+  pre-warm** of the DNS/TLS/WebSocket path — the original's remaining overlay
+  touches, reproduced here, plus fluid animations for the panel, the preview
+  and the startup fade.
 * **Math (LaTeX) and mermaid diagrams** render in an embedded web view, exactly
   like the original — with KaTeX and mermaid vendored locally (MIT), so unlike
   a CDN-based renderer it keeps working offline.
@@ -397,7 +406,7 @@ entirely: your server bills nothing.
 * **Session export to Markdown** — one session, the whole history or straight to
   the clipboard; the original keeps history inside its own UI only.
 * **Linux system-audio loopback** via the PulseAudio/PipeWire monitor (the
-  original's loopback is Windows-only) and a documented macOS path (BlackHole).
+  original's loopback is Windows-only).
 * **Interface translations**: a dependency-free, offline catalog layer — English
   and German ship today, and adding a language is one JSON file.
 * Latency when configured equivalently (Deepgram + cloud LLM): the plumbing
@@ -479,8 +488,7 @@ python tests/e2e/stt_smoke.py --capture 8 --source microphone --device input:3
 
 On the default `system` source the script picks the default device itself:
 WASAPI loopback on Windows, the default sink's monitor on Linux (PulseAudio or
-PipeWire via `pactl`), and on macOS the configured microphone — route the system
-output into BlackHole and select it there. Verified end-to-end on PipeWire:
+PipeWire via `pactl`). Verified end-to-end on PipeWire:
 `--capture 16 --source system` transcribed a played speech clip word-perfect
 with 8 live partial updates.
 
@@ -548,6 +556,10 @@ runs the core suite as a first line of defence.
 | Multi-region screenshots | ✅ queue/cap/remove/attach tests + `run_e2e.py` sends two images in one vision request; ⏳ Windows capture flow |
 | Decoy cursor (region selection) | ✅ blank/dummy/glide logic + pixmap fallback offscreen; ⏳ GDI bitmap and share appearance on Windows |
 | Hotkey editor | ✅ validation + save flow offscreen; registration path unchanged |
+| Click-through toggle | ✅ state machine + portable `WindowTransparentForInput` fallback (offscreen), refusal without a hotkey; ⏳ real click pass-through on Windows/X11 and compositor behaviour on Wayland |
+| Streaming preview popup | ✅ show/update/linger/hide while collapsed, teaser cleaning (offscreen); ⏳ on-screen placement |
+| Startup pre-warm | ✅ health probe + WebSocket handshake with stubbed transports, failures swallowed; ⏳ latency delta against a live provider |
+| UI animations (collapse, preview, startup fade) | ✅ end-state tests offscreen; ⏳ visual smoothness on Windows/X11 |
 | Feedback dialog | ✅ payload test + offscreen send flow |
 | WebSocket transport | ✅ in-process server tests (auth, chat/vision frames, validation, error frames) + `run_e2e.py` streams chat/vision over WS and cancels mid-stream + verified against the **frozen bundle** (chat over ws/sse/auto, vision over ws, unauthenticated socket rejected); ⏳ reverse-proxied `wss://` deployments |
 | Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case) |
@@ -563,7 +575,7 @@ runs the core suite as a first line of defence.
 | Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; the release workflow also builds that bundle as a Linux tarball with the `.desktop` launcher and `install-linux.sh`; ⏳ Windows exe from CI on a release tag |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
 | WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
-| Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 14 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
+| Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 15 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
 | Stealth (`WDA_EXCLUDEFROMCAPTURE`, Windows-only) | ⏳ verify with a screen-share |
 | Deepgram engine | ⏳ needs an API key (`stt_engine=deepgram`) |
 | Real model provider | ✅ any OpenAI-compatible endpoint (mock used in CI; point `.env` at your provider) |
@@ -579,8 +591,8 @@ runs the core suite as a first line of defence.
 - [x] Linux system-audio loopback via PulseAudio/PipeWire monitor sources.
 - [x] Interface scale setting + hi-DPI thumbnails, tabbed settings, themed controls.
 - [x] Windows/Linux parity: Wayland portal screenshots, X11 `XGrabKey` + portal hotkeys, frozen region selection, Linux release artifact.
+- [x] Click-through mode, collapsed-answer streaming preview, startup pre-warm and fluid animations.
 - [ ] Verify and iterate the Windows PyInstaller bundle on real hardware (CI builds it on tags).
-- [ ] macOS system-audio capture beyond the documented BlackHole path (e.g. ScreenCaptureKit).
 - [ ] A third-party translation PR flow (the German catalog has not been native-reviewed).
 - [ ] Optional packaging niceties: an installer, auto-update-free version interstitial.
 

@@ -74,8 +74,8 @@ Share the **whole screen** in Teams / Zoom / Meet (not a single window).
 ## 4. Global hotkeys under a meeting app
 
 With the meeting app focused (or a game), press each action:
-mic toggle, screenshot, ask, erase, history, settings, prev/next answer,
-scroll up/down, move up/down/left/right, opacity up/down.
+mic toggle, screenshot, ask, erase, click-through, history, settings, prev/next
+answer, scroll up/down, move up/down/left/right, opacity up/down.
 
 - [ ] All actions fire while another app has focus.
 - [ ] In Settings → Hotkeys, change one binding, save, and the new binding works immediately.
@@ -126,6 +126,21 @@ or download the CI artifact (Actions → **release** → *Run workflow*, or a `v
 - [ ] `OpenGirGit.exe --check-render` prints `render check: OK`.
 - [ ] `OpenGirGit.exe --print-settings` / `--list-devices` work.
 - [ ] Unpacked folder is self-contained (no Python installed on the machine used to test).
+
+## 9. Click-through, preview popup, pre-warm
+
+- [ ] Press `Shift+Alt+C` (or the 🖱 button): the status bar shows *click-through on*;
+      clicks over the overlay now reach the app underneath (type in Notepad through it).
+- [ ] `Shift+Alt+C` again returns control; the mode is session-only (a restart starts
+      with clicks on).
+- [ ] Clear the `click_through` hotkey in Settings → Hotkeys: the toggle then refuses to
+      enable — there would be no way back.
+- [ ] Collapse the panel, ask a question: a preview popup floats above the bar with the
+      incoming answer and fades out ~1.5 s after the stream ends.
+- [ ] In a screen share, the popup is excluded from capture like the overlay itself.
+- [ ] Collapse/expand slides and the overlay fades in at startup.
+- [ ] Pre-warm: the server console shows the `/api/health` probe right after startup,
+      before your first question.
 
 ## Reporting
 

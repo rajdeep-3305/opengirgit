@@ -91,7 +91,7 @@ the application grid**.
 - [ ] First launch: the desktop shows its shortcut confirmation dialog with the
       preferred triggers (`ALT+SHIFT+a`, …).
 - [ ] Accept it; with a browser focused, every action fires (mic, screenshot,
-      ask, erase, history, settings, prev/next, scroll, move, opacity).
+      ask, erase, click-through, history, settings, prev/next, scroll, move, opacity).
 - [ ] Settings → Hotkeys reports *system-wide (desktop portal)*.
 - [ ] Re-assign a binding in the desktop's own keyboard settings; the app still
       reacts to the desktop's binding (the app's preferred trigger is a hint).
@@ -153,6 +153,21 @@ or download the CI artifact (Actions → **release** → *Run workflow*, or a `v
 - [ ] The folder is self-contained (no Python installed on the machine used to
       test — a VM or a second user account works).
 - [ ] `install-linux.sh --uninstall` removes the entry and icon again.
+
+## 7. Click-through, preview popup, pre-warm
+
+- [ ] Press `Shift+Alt+C` (or the 🖱 button): clicks over the overlay reach the app
+      underneath; the hotkey (or the button, once clicks are back) toggles it off.
+- [ ] On X11 the window keeps its position when toggling; on Wayland the compositor owns
+      geometry — note whether the window is re-placed when the mode flips (expected on
+      some compositors, not a bug).
+- [ ] Clear the `click_through` hotkey in Settings → Hotkeys: the toggle refuses to enable.
+- [ ] Collapse the panel, ask a question: the preview popup appears near the bar with the
+      streaming answer and fades ~1.5 s after it ends; note the placement under your
+      compositor (it is positioned as a desktop popup).
+- [ ] Collapse/expand and the startup fade animate; typing and hotkeys stay responsive.
+- [ ] Startup pre-warm: the server console shows the `/api/health` probe right after the
+      app starts, before the first question.
 
 ## Reporting
 

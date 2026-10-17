@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command OpenGirGit (Linux/macOS): create a virtualenv, install both
+# One-command OpenGirGit (Linux): create a virtualenv, install both
 # requirement sets, start the API server and launch the overlay client.
 #
 #   ./run.sh                 # full stack (default)
