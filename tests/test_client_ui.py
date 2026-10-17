@@ -671,6 +671,66 @@ def test_click_through_toggle_state_machine(qt_app, tmp_path, monkeypatch):
     overlay.deleteLater()
 
 
+def test_preview_popup_teases_the_stream_while_collapsed(qt_app, tmp_path, monkeypatch):
+    from PySide6.QtTest import QTest
+
+    monkeypatch.setattr(AppSettings, "save", lambda self: None)
+    overlay = OverlayWindow(_StubApi(), _settings(tmp_path), ConversationStore(), lambda: "")
+    overlay.show()
+    qt_app.processEvents()
+
+    overlay.set_collapsed(True)
+    QTest.qWait(250)
+    assert overlay._answer_panel.isHidden()  # noqa: SLF001
+
+    overlay.submit_question("status update")
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+    QTest.qWait(150)
+
+    # the tail of the stream is visible while the panel is collapsed
+    assert overlay._preview.isVisible()  # noqa: SLF001
+    assert "Answer to:" in overlay._preview.text()  # noqa: SLF001
+
+    # expanding hides the popup right away
+    overlay.set_collapsed(False)
+    QTest.qWait(400)
+    assert not overlay._preview.isVisible()  # noqa: SLF001
+
+    # collapsing again and asking once more brings it back, then it lingers and fades
+    overlay.set_collapsed(True)
+    QTest.qWait(250)
+    overlay.submit_question("second question")
+    worker = overlay._worker  # noqa: SLF001
+    assert worker is not None
+    worker.wait(5000)
+    qt_app.processEvents()
+    QTest.qWait(150)
+    assert overlay._preview.isVisible()  # noqa: SLF001
+    QTest.qWait(2200)
+    assert not overlay._preview.isVisible()  # noqa: SLF001
+    overlay.close()
+    overlay.deleteLater()
+
+
+def test_preview_text_is_a_cleaned_tail(qt_app):
+    from opengirgit.preview import PREVIEW_CHARS, clean_preview_text
+
+    cleaned = clean_preview_text(
+        "# Heading\n\n**bold** and `code`\n```python\nprint(1)\n```\nend of stream"
+    )
+    assert "Heading" in cleaned and "bold" in cleaned and "end of stream" in cleaned
+    assert "**" not in cleaned and "`" not in cleaned
+
+    tail = clean_preview_text("y" * (PREVIEW_CHARS * 3))
+    assert tail.startswith("…")
+    assert len(tail) == PREVIEW_CHARS + 1
+
+    assert clean_preview_text("") == ""
+
+
 def test_collapse_expand_animates_to_the_end_states(qt_app, tmp_path, monkeypatch):
     from PySide6.QtTest import QTest
 

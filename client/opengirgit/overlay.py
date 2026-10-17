@@ -26,6 +26,7 @@ from .audio import list_devices
 from .capture import pixmap_from_b64
 from .config import AppSettings
 from .i18n import tr
+from .preview import StreamPreview
 from .stores import ConversationStore
 from .workers import StreamWorker
 
@@ -184,6 +185,9 @@ class OverlayWindow(QWidget):
         self._answers_visible = True
         self._panel_animation: QPropertyAnimation | None = None
         self._opacity_animation: QPropertyAnimation | None = None
+
+        # Teaser popup for the streaming answer while the panel is collapsed.
+        self._preview = StreamPreview(self)
 
         # Screenshots queue up and attach to the next question (like the original).
         self._pending_images: list[str] = []
@@ -386,12 +390,18 @@ class OverlayWindow(QWidget):
         for animation in (self._panel_animation, self._opacity_animation):
             if animation is not None:
                 animation.stop()
+        self._preview.hide_now(immediate=True)
         self.closed.emit()
         super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: D102
         super().resizeEvent(event)
         self._apply_status_text()
+        self._preview.reposition(self)
+
+    def moveEvent(self, event) -> None:  # noqa: D102
+        super().moveEvent(event)
+        self._preview.reposition(self)
 
     def keyPressEvent(self, event) -> None:  # noqa: D102
         if event.key() == Qt.Key_Escape:
@@ -681,6 +691,7 @@ class OverlayWindow(QWidget):
         self._worker = None
         self._streaming = False
         self._flush_timer.stop()
+        self._preview.hide_now()
 
     def _conversation_payload(self) -> list[dict[str, str]]:
         payload: list[dict[str, str]] = []
@@ -695,8 +706,16 @@ class OverlayWindow(QWidget):
         if self.sender() is not self._worker:
             return  # stale chunk from a cancelled/replaced stream
         self._answer_buffer += text
+        self._update_stream_preview()
         if not self._flush_timer.isActive():
             self._flush_timer.start()
+
+    def _update_stream_preview(self) -> None:
+        """Tease the streaming answer in the popup while the panel is collapsed."""
+        if self._streaming and not self._answers_visible:
+            self._preview.show_near(self, self._answer_buffer)
+        elif self._answers_visible:
+            self._preview.hide_now()
 
     def _render_answer(self, text: str | None = None, *, force: bool = False) -> None:
         """Render the buffered answer; math/mermaid answers use the web view."""
@@ -799,6 +818,7 @@ class OverlayWindow(QWidget):
             return
         self._streaming = False
         self._worker = None
+        self._preview.hide_soon()
         self.set_status(tr("cancelled"))
 
     def _on_answer_done(self, question: str, answer: str, *, kind: str) -> None:
@@ -806,6 +826,7 @@ class OverlayWindow(QWidget):
         self._worker = None
         self._answer_buffer = answer or self._answer_buffer
         self._flush_answer(force=True)
+        self._preview.hide_soon()
         self.set_status(tr("done"))
 
         if self._answer_buffer.strip():
@@ -823,6 +844,7 @@ class OverlayWindow(QWidget):
         self._streaming = False
         self._worker = None
         self._flush_answer(force=True)
+        self._preview.hide_soon()
         self.set_status(tr("error: {message}").format(message=message), error=True)
         if self._answer_buffer.strip():
             self._render_answer(
@@ -903,6 +925,10 @@ class OverlayWindow(QWidget):
         animation.start()
 
         self._collapse_button.setText("▾" if visible else "▸")
+        if visible:
+            self._preview.hide_now()
+        elif self._streaming:
+            self._preview.show_near(self, self._answer_buffer)
 
     def _grow_window_for_panel(self, _value: float | None = None) -> None:
         """Let the top-level follow the expanding panel without ever shrinking."""
