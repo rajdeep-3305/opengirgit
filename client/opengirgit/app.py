@@ -140,6 +140,7 @@ class AppController(QObject):
 
         self._seed_history()
         self._overlay.show()
+        self._overlay.fade_in()
 
     # ------------------------------------------------------------- context #
 

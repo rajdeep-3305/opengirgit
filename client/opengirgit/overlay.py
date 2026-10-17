@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox,
@@ -36,6 +36,9 @@ OPACITY_STEP = 0.05
 THUMBNAIL_HEIGHT = 56
 MAX_CAPTURES = 5  # the server accepts at most 5 images per vision request
 WEB_FLUSH_INTERVAL = 0.35  # seconds; throttles web-view renders while streaming
+PANEL_ANIM_MS = 170  # collapse/expand slide duration
+FADE_IN_MS = 220  # startup fade duration
+_WIDGET_SIZE_MAX = 16777215
 
 CODE_LANGUAGES = [
     "auto",
@@ -176,6 +179,11 @@ class OverlayWindow(QWidget):
 
         # Session-only click-through mode (mouse events reach the app below).
         self._click_through = False
+
+        # Collapse/expand is animated; the end state is what callers observe.
+        self._answers_visible = True
+        self._panel_animation: QPropertyAnimation | None = None
+        self._opacity_animation: QPropertyAnimation | None = None
 
         # Screenshots queue up and attach to the next question (like the original).
         self._pending_images: list[str] = []
@@ -375,6 +383,9 @@ class OverlayWindow(QWidget):
 
     def closeEvent(self, event) -> None:  # noqa: D102
         self.cancel_stream()
+        for animation in (self._panel_animation, self._opacity_animation):
+            if animation is not None:
+                animation.stop()
         self.closed.emit()
         super().closeEvent(event)
 
@@ -861,16 +872,53 @@ class OverlayWindow(QWidget):
     # ------------------------------------------------------------ misc verbs #
 
     def toggle_collapse(self) -> None:
-        collapsed = self._answer_panel.isVisible()
-        self._answer_panel.setVisible(not collapsed)
-        self._collapse_button.setText("▸" if collapsed else "▾")
-        self.adjustSize()
-        if not collapsed:
-            self.resize(self.width(), self.minimumSizeHint().height())
+        self.set_answers_visible(not self._answers_visible)
 
     def set_collapsed(self, collapsed: bool) -> None:
-        if self._answer_panel.isVisible() == collapsed:
-            self.toggle_collapse()
+        self.set_answers_visible(not collapsed)
+
+    def set_answers_visible(self, visible: bool) -> None:
+        """Collapse or expand the answer panel with a short slide animation."""
+        if visible == self._answers_visible:
+            return
+        self._answers_visible = visible
+        panel = self._answer_panel
+
+        if visible:
+            panel.setVisible(True)
+            start, end = 0, max(panel.sizeHint().height(), panel.height())
+        else:
+            start, end = panel.height(), 0
+
+        if self._panel_animation is not None:
+            self._panel_animation.stop()
+        animation = QPropertyAnimation(panel, b"maximumHeight", self)
+        animation.setDuration(PANEL_ANIM_MS)
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        animation.setStartValue(start)
+        animation.setEndValue(end)
+        animation.valueChanged.connect(self._grow_window_for_panel)
+        animation.finished.connect(lambda: self._on_panel_animated(visible))
+        self._panel_animation = animation
+        animation.start()
+
+        self._collapse_button.setText("▾" if visible else "▸")
+
+    def _grow_window_for_panel(self, _value: float | None = None) -> None:
+        """Let the top-level follow the expanding panel without ever shrinking."""
+        needed = self.sizeHint().height()
+        if needed > self.height():
+            self.resize(self.width(), needed)
+
+    def _on_panel_animated(self, visible: bool) -> None:
+        panel = self._answer_panel
+        panel.setMaximumHeight(_WIDGET_SIZE_MAX)
+        if visible:
+            self.adjustSize()
+        else:
+            panel.setVisible(False)
+            self.adjustSize()
+            self.resize(self.width(), self.minimumSizeHint().height())
 
     # ------------------------------------------------------------ click-through #
 
@@ -901,7 +949,21 @@ class OverlayWindow(QWidget):
         else:
             self.set_status(tr("click-through off"))
 
+    def fade_in(self) -> None:
+        """Fade the overlay in at startup (harmlessly ignored where unsupported)."""
+        if self._opacity_animation is not None:
+            self._opacity_animation.stop()
+        animation = QPropertyAnimation(self, b"windowOpacity", self)
+        animation.setDuration(FADE_IN_MS)
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        animation.setStartValue(0.0)
+        animation.setEndValue(self._settings.opacity)
+        self._opacity_animation = animation
+        animation.start()
+
     def nudge_opacity(self, delta: float) -> None:
+        if self._opacity_animation is not None:
+            self._opacity_animation.stop()  # a user nudge beats the startup fade
         value = min(max(self.windowOpacity() + delta, 0.3), 1.0)
         self.setWindowOpacity(value)
         self._settings.opacity = value

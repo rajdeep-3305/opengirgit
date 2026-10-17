@@ -671,3 +671,51 @@ def test_click_through_toggle_state_machine(qt_app, tmp_path, monkeypatch):
     overlay.deleteLater()
 
 
+def test_collapse_expand_animates_to_the_end_states(qt_app, tmp_path, monkeypatch):
+    from PySide6.QtTest import QTest
+
+    monkeypatch.setattr(AppSettings, "save", lambda self: None)
+    overlay = OverlayWindow(_StubApi(), _settings(tmp_path), ConversationStore(), lambda: "")
+    overlay.show()
+    qt_app.processEvents()
+    panel = overlay._answer_panel  # noqa: SLF001
+
+    overlay.toggle_collapse()
+    assert overlay._answers_visible is False  # noqa: SLF001
+    assert overlay._collapse_button.text() == "▸"  # noqa: SLF001
+    QTest.qWait(350)
+    assert panel.isHidden()
+    collapsed_height = overlay.height()
+
+    overlay.toggle_collapse()
+    assert overlay._answers_visible is True  # noqa: SLF001
+    assert overlay._collapse_button.text() == "▾"  # noqa: SLF001
+    QTest.qWait(350)
+    assert not panel.isHidden()
+    assert panel.maximumHeight() == 16777215  # constraint released for streaming
+    assert overlay.height() >= collapsed_height
+    overlay.close()
+    overlay.deleteLater()
+
+
+def test_startup_fade_reaches_the_saved_opacity(qt_app, tmp_path, monkeypatch):
+    from PySide6.QtTest import QTest
+
+    monkeypatch.setattr(AppSettings, "save", lambda self: None)
+    settings = _settings(tmp_path)
+    settings.opacity = 0.8
+    overlay = OverlayWindow(_StubApi(), settings, ConversationStore(), lambda: "")
+    overlay.show()
+    overlay.fade_in()
+    QTest.qWait(450)
+    assert abs(overlay.windowOpacity() - 0.8) < 0.02
+
+    # a manual nudge during a later fade takes over and stops the animation
+    overlay.fade_in()
+    QTest.qWait(40)
+    overlay.nudge_opacity(0.05)
+    settled = overlay.windowOpacity()
+    QTest.qWait(300)
+    assert abs(overlay.windowOpacity() - settled) < 1e-6
+    overlay.close()
+    overlay.deleteLater()
