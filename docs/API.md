@@ -15,7 +15,7 @@ locally), minus everything billing/payment related.
 ### `GET /`
 
 ```json
-{"message": "OpenGirGit API", "version": "0.1.0", "status": "running"}
+{"message": "OpenGirGit API", "version": "0.2.0", "status": "running"}
 ```
 
 ### `GET /api/health`
@@ -30,7 +30,7 @@ No auth. Consumed by the client to display server version information.
 
 ```json
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "download_url": "",
   "release_notes": "",
   "mandatory": false,
@@ -271,7 +271,7 @@ The client connects with `Authorization: Token <token>` and sends raw
 No auth.
 
 ```json
-{"message": "great app", "email": "you@example.com", "app_version": "0.1.0"}
+{"message": "great app", "email": "you@example.com", "app_version": "0.2.0"}
 ```
 
 Response: `{"success": true}`. Stored in the `feedback` table.
