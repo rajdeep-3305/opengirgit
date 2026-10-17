@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QApplication, QDialog
 
 from . import stealth
@@ -141,6 +142,20 @@ class AppController(QObject):
         self._seed_history()
         self._overlay.show()
         self._overlay.fade_in()
+        # Warm DNS/TLS (and the WebSocket path) while the user settles in.
+        self._prewarm_thread: threading.Thread | None = None
+        QTimer.singleShot(300, self._start_prewarm)
+
+    def _start_prewarm(self) -> None:
+        """Kick off the connection warm-up on a daemon thread (never blocks)."""
+        try:
+            thread = threading.Thread(
+                target=self._api.prewarm, name="opengirgit-prewarm", daemon=True
+            )
+            self._prewarm_thread = thread
+            thread.start()
+        except Exception:  # noqa: BLE001 - a warm-up must never break startup
+            self._prewarm_thread = None
 
     # ------------------------------------------------------------- context #
 

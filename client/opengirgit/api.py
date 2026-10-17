@@ -148,6 +148,36 @@ class ApiClient:
     def get_version(self) -> dict[str, Any]:
         return self._request("GET", "/api/version")
 
+    def prewarm(self) -> None:
+        """Best-effort warm-up of DNS/TLS and (optionally) the chat WebSocket.
+
+        Runs on a background thread at startup so the first question does not
+        pay connection setup. Never raises and never sends a completion — the
+        health probe and a WebSocket handshake are all that happen here.
+        """
+        try:
+            httpx.get(
+                f"{self.base_url}/api/health", timeout=3.0, headers=self._headers()
+            )
+        except Exception:  # noqa: BLE001 - warm-up is best-effort by definition
+            pass
+        if not self.token or self.transport not in ("auto", "websocket"):
+            return
+        try:
+            from websockets.sync.client import connect
+        except ImportError:
+            return
+        try:
+            with connect(
+                f"{_websocket_url(self.base_url)}/api/llm/ws",
+                additional_headers=self._headers(),
+                open_timeout=4,
+                close_timeout=1,
+            ):
+                pass  # handshake only: auth and framing are now warm
+        except Exception:  # noqa: BLE001
+            pass
+
     def parse_resume(self, resume_text: str) -> dict[str, Any]:
         data = self._request(
             "POST",

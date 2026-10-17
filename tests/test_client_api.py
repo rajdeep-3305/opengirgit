@@ -347,3 +347,68 @@ def test_sse_transport_never_touches_the_socket(monkeypatch):
     monkeypatch.setattr(ws_client, "connect", explode)
     _FakeClient.lines = _sse({"chunk": "plain"}, {"done": True})
     assert ApiClient("http://x", transport="sse").chat_stream("hi") == "plain"
+
+
+# --------------------------------------------------------------------------- #
+# Startup pre-warm
+# --------------------------------------------------------------------------- #
+
+
+def test_prewarm_probes_health_and_the_websocket_handshake(monkeypatch):
+    health: dict = {}
+
+    def fake_get(url, **kwargs):
+        health["url"] = url
+        health["headers"] = kwargs.get("headers")
+        return _JsonResponse({"status": "ok"})
+
+    monkeypatch.setattr(api_module.httpx, "get", fake_get)
+    _require_websockets()
+    import websockets.sync.client as ws_client
+
+    connection = _FakeWsConnection([])
+    dialed: list[str] = []
+
+    def connect(url, **kwargs):
+        dialed.append(url)
+        connection.headers = kwargs.get("additional_headers")
+        return connection
+
+    monkeypatch.setattr(ws_client, "connect", connect)
+    ApiClient("http://x", token="tok", transport="auto").prewarm()
+
+    assert health["url"] == "http://x/api/health"
+    assert health["headers"]["Authorization"] == "Bearer tok"
+    assert dialed and dialed[0].endswith("/api/llm/ws")
+    assert connection.headers["Authorization"] == "Bearer tok"
+    assert connection.closed is True  # handshake only: closed right away
+
+
+def test_prewarm_never_raises_and_respects_the_transport(monkeypatch):
+    def refused(*args, **kwargs):
+        raise api_module.httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(api_module.httpx, "get", refused)
+    _require_websockets()
+    import websockets.sync.client as ws_client
+
+    dialed: list[str] = []
+
+    def recording_connect(url, **kwargs):
+        dialed.append(url)
+        raise OSError("no route to host")
+
+    monkeypatch.setattr(ws_client, "connect", recording_connect)
+
+    # SSE mode: health probe only, a dead server must not raise.
+    ApiClient("http://x", token="tok", transport="sse").prewarm()
+    assert dialed == []
+
+    # WebSocket mode with an unreachable socket: swallowed too.
+    ApiClient("http://x", token="tok", transport="websocket").prewarm()
+    assert len(dialed) == 1
+
+    # No token: the socket would only be rejected, so it is skipped.
+    dialed.clear()
+    ApiClient("http://x").prewarm()
+    assert dialed == []

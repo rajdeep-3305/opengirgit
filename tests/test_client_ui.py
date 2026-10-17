@@ -466,6 +466,17 @@ def test_overlay_web_render_disabled_and_failed_fallback(qt_app, tmp_path):
     overlay.close()
 
 
+class _PrewarmApi(_StubApi):
+    """Records that the startup warm-up ran, without touching the network."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prewarmed = False
+
+    def prewarm(self) -> None:  # type: ignore[override]
+        self.prewarmed = True
+
+
 def test_app_controller_wiring(qt_app, tmp_path, monkeypatch):
     from opengirgit import app as app_module
 
@@ -480,7 +491,8 @@ def test_app_controller_wiring(qt_app, tmp_path, monkeypatch):
             "hotkeys": {"ask": "Shift+Alt+A", "erase": "Shift+Alt+D"},
         }
     )
-    controller = app_module.AppController(qt_app, settings, "test@example.com", _StubApi())
+    api = _PrewarmApi()
+    controller = app_module.AppController(qt_app, settings, "test@example.com", api)
 
     assert controller._overlay.isVisible()  # noqa: SLF001
     assert controller.context_string().startswith("=== CANDIDATE RESUME ===")
@@ -502,6 +514,13 @@ def test_app_controller_wiring(qt_app, tmp_path, monkeypatch):
         "click_through",
     ):
         controller._on_hotkey(action)  # noqa: SLF001
+
+    # The startup warm-up is a daemon thread that must complete cleanly.
+    controller._start_prewarm()  # noqa: SLF001
+    thread = controller._prewarm_thread  # noqa: SLF001
+    assert thread is not None
+    thread.join(timeout=5)
+    assert api.prewarmed is True
 
     controller._listener.stop()  # noqa: SLF001
     controller._hotkeys.unregister_all()  # noqa: SLF001
