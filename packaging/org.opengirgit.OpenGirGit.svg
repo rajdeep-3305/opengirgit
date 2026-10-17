@@ -10,10 +10,18 @@
       <stop offset="1" stop-color="#63b3ed"/>
     </linearGradient>
   </defs>
+  <!-- rounded app tile -->
   <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)"/>
-  <path d="M36 40h56a8 8 0 0 1 8 8v28a8 8 0 0 1-8 8H62l-16 14v-14h-10a8 8 0 0 1-8-8V48a8 8 0 0 1 8-8z"
-        fill="none" stroke="url(#fg)" stroke-width="7" stroke-linejoin="round"/>
-  <circle cx="48" cy="62" r="4.5" fill="url(#fg)"/>
-  <circle cx="64" cy="62" r="4.5" fill="url(#fg)"/>
-  <circle cx="80" cy="62" r="4.5" fill="url(#fg)"/>
+  <!-- speech bubble with the three listening dots -->
+  <path d="M52 49 C67 49 78 59 78 73 C78 87 67 97 52 97 C47 97 42 96 38 94 L30 104 L32 90 C28 85 26 79 26 73 C26 59 37 49 52 49 Z"
+        fill="none" stroke="url(#fg)" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="42" cy="72" r="3.4" fill="url(#fg)"/>
+  <circle cx="52" cy="72" r="3.4" fill="url(#fg)"/>
+  <circle cx="62" cy="72" r="3.4" fill="url(#fg)"/>
+  <!-- the chameleon: casque, eye turret, a small smile -->
+  <path d="M99 57 C102 51 100 43 94 39 C88 35 84 31 78 30 C70 29 64 33 63 41 C62 48 65 55 71 60 C77 65 86 66 92 63 C95 61 98 60 99 57 Z"
+        fill="url(#fg)"/>
+  <circle cx="86" cy="33" r="9" fill="url(#fg)"/>
+  <circle cx="86" cy="33" r="4" fill="#101822"/>
+  <path d="M91 56 C93.5 57.8 95.5 57.3 97 55.8" stroke="#101822" stroke-width="2" fill="none" stroke-linecap="round"/>
 </svg>
