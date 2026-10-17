@@ -231,6 +231,48 @@ def test_failed_rewrite_restores_the_original_answer(qt_app, tmp_path, monkeypat
     overlay.close()
 
 
+def test_info_dialog_attaches_documents_and_images(qt_app, tmp_path, monkeypatch):
+    from opengirgit import dialogs as dialogs_module
+
+    stub = _StubApi()
+    info = InfoDialog(stub, {"company": "Acme"}, _ResumeCache(tmp_path))
+
+    # documents are extracted locally into the job description
+    doc = tmp_path / "jd.txt"
+    doc.write_text("We need a backend engineer.", encoding="utf-8")
+    monkeypatch.setattr(
+        dialogs_module.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(doc), ""),
+    )
+    info._attach_into(info._jd, "t")  # noqa: SLF001
+    info._workers[-1].wait(6000)  # noqa: SLF001 - await, not wait_for_workers()
+    qt_app.processEvents()
+    jd_text = info._jd.toPlainText()  # noqa: SLF001
+    assert "--- jd.txt ---" in jd_text
+    assert "We need a backend engineer." in jd_text
+    assert stub.calls == []  # a text file never leaves the machine
+
+    # images are transcribed through the vision model into the notes
+    shot = tmp_path / "whiteboard.png"
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.white)
+    assert pixmap.save(str(shot), "PNG")
+    monkeypatch.setattr(
+        dialogs_module.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(shot), ""),
+    )
+    info._attach_into(info._extra, "t")  # noqa: SLF001
+    info._workers[-1].wait(6000)  # noqa: SLF001 - await, not wait_for_workers()
+    qt_app.processEvents()
+    assert "Screenshot answer" in info._extra.toPlainText()  # noqa: SLF001
+    assert stub.calls[-1].startswith("vision:Transcribe")  # the transcription prompt
+    info._save()  # noqa: SLF001
+    assert "Screenshot answer" in info.result["anything_else"]
+    info.close()
+
+
 def test_dialogs_construct(qt_app, tmp_path):
     settings = _settings(tmp_path)
     login = LoginDialog(settings)

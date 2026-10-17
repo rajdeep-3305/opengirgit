@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QThread
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -38,9 +38,11 @@ from . import render as render_mod
 from . import resume as resume_mod
 from .api import ApiClient, ApiError
 from .audio import list_devices
+from .capture import pixmap_to_jpeg_b64
 from .config import DEFAULT_HOTKEYS, UI_SCALES, AppSettings
 from .hotkeys import validate_hotkeys
 from .i18n import available_languages, tr
+from .prompts import IMAGE_TRANSCRIPTION_PROMPT
 from .resume import ResumeExtractionError
 from .stores import ConversationStore, ResumeCache
 from .version import APP_VERSION
@@ -48,6 +50,7 @@ from .workers import FunctionWorker
 
 WHISPER_MODELS = ["tiny.en", "base.en", "small.en", "medium.en", "large-v3", "tiny", "base", "small"]
 COMPUTE_TYPES = ["int8", "int8_float16", "float16", "float32"]
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
 class _WorkerOwner:
@@ -246,6 +249,15 @@ class InfoDialog(QDialog, _WorkerOwner):
         self._jd = QPlainTextEdit(str(context.get("job_description") or ""))
         self._jd.setPlaceholderText(tr("Paste the job description…"))
         details_layout.addRow(tr("Job description"), self._jd)
+        attach_tip = tr(
+            "Add a file's text here — documents are read locally, images are transcribed"
+        )
+        jd_attach = QPushButton(tr("Attach a file…"))
+        jd_attach.setToolTip(attach_tip)
+        jd_attach.clicked.connect(
+            lambda: self._attach_into(self._jd, tr("Attach to the job description"))
+        )
+        details_layout.addRow("", jd_attach)
         layout.addWidget(details, 2)
 
         resume_box = QGroupBox(tr("Resume"))
@@ -273,7 +285,17 @@ class InfoDialog(QDialog, _WorkerOwner):
             )
         )
         extra_layout.addWidget(self._extra)
+        extra_attach = QPushButton(tr("Attach a file…"))
+        extra_attach.setToolTip(attach_tip)
+        extra_attach.clicked.connect(
+            lambda: self._attach_into(self._extra, tr("Attach to anything else"))
+        )
+        extra_layout.addWidget(extra_attach, 0, Qt.AlignRight)
         layout.addWidget(extra_box, 1)
+
+        self._attach_status = QLabel("")
+        self._attach_status.setWordWrap(True)
+        layout.addWidget(self._attach_status)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText(tr("Save"))
@@ -340,6 +362,78 @@ class InfoDialog(QDialog, _WorkerOwner):
             work,
             ok,
             lambda message: self._resume_status.setText(
+                tr("Error: {message}").format(message=message)
+            ),
+        )
+
+    # -- attachments -------------------------------------------------------- #
+
+    def _attach_into(self, editor: QPlainTextEdit, title: str) -> None:
+        """Pick a document or image and fold its text into ``editor``.
+
+        Documents are extracted locally; images are sent to the vision model
+        and their transcription is appended instead.
+        """
+        filters = tr(
+            "Documents (*.pdf *.docx *.txt *.md *.rtf);;Images (*.png *.jpg *.jpeg *.webp *.bmp)"
+        )
+        path, _ = QFileDialog.getOpenFileName(self, title, "", filters)
+        if not path:
+            return
+        name = Path(path).name
+        if Path(path).suffix.lower() in IMAGE_SUFFIXES:
+            self._attach_image(editor, path, name)
+        else:
+            self._attach_document(editor, path, name)
+
+    def _append_text(self, editor: QPlainTextEdit, name: str, text: str) -> None:
+        section = f"--- {name} ---\n{text.strip()}"
+        current = editor.toPlainText().strip()
+        editor.setPlainText(f"{current}\n\n{section}" if current else section)
+
+    def _attach_document(self, editor: QPlainTextEdit, path: str, name: str) -> None:
+        self._attach_status.setText(tr("Reading {name}…").format(name=name))
+
+        def work() -> str:
+            return resume_mod.extract_text(path).strip()
+
+        def ok(text: str) -> None:
+            if not text:
+                self._attach_status.setText(tr("No text found in {name}").format(name=name))
+                return
+            self._append_text(editor, name, text)
+            self._attach_status.setText(tr("Attached {name}").format(name=name))
+
+        self.run_async(
+            work,
+            ok,
+            lambda message: self._attach_status.setText(
+                tr("Error: {message}").format(message=message)
+            ),
+        )
+
+    def _attach_image(self, editor: QPlainTextEdit, path: str, name: str) -> None:
+        # The server tags every image as JPEG, so re-encode before sending.
+        encoded = pixmap_to_jpeg_b64(QPixmap(path))
+        if not encoded:
+            self._attach_status.setText(tr("Not an image: {name}").format(name=name))
+            return
+        self._attach_status.setText(tr("Transcribing {name}…").format(name=name))
+
+        def work() -> str:
+            return self._api.vision_stream(IMAGE_TRANSCRIPTION_PROMPT, [encoded])
+
+        def ok(text: str) -> None:
+            if not text.strip():
+                self._attach_status.setText(tr("No text found in {name}").format(name=name))
+                return
+            self._append_text(editor, name, text)
+            self._attach_status.setText(tr("Attached {name}").format(name=name))
+
+        self.run_async(
+            work,
+            ok,
+            lambda message: self._attach_status.setText(
                 tr("Error: {message}").format(message=message)
             ),
         )

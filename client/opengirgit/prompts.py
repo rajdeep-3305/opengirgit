@@ -9,6 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
+IMAGE_TRANSCRIPTION_PROMPT = (
+    "Transcribe every piece of text in this image, preserving the layout as "
+    "plain text: headings, lists, tables. If the image contains no text, "
+    "describe its relevant content in a few sentences. Reply with only the "
+    "transcription or description."
+)
+
 
 def format_resume_data(resume: dict[str, Any] | None) -> str:
     lines: list[str] = ["=== CANDIDATE RESUME ==="]
