@@ -145,7 +145,7 @@ _X11_LOCK_MASK = 1 << 1
 _X11_NUMLOCK_MASK = 1 << 4
 
 # Actions where the OS key-repeat is undesirable (they submit/erase/toggle).
-NO_REPEAT_ACTIONS = {"ask", "erase", "collapse", "screenshot", "prev", "next"}
+NO_REPEAT_ACTIONS = {"ask", "erase", "collapse", "screenshot", "prev", "next", "click_through"}
 
 
 class HotkeyError(Exception):

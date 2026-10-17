@@ -239,6 +239,7 @@ class AppController(QObject):
             "ask": self._overlay.ask_hotkey,
             "erase": self._overlay.erase,
             "screenshot": self.take_screenshot,
+            "click_through": self._overlay.toggle_click_through,
             "prev": self._overlay.show_previous,
             "next": self._overlay.show_next,
             "scroll_up": lambda: self._overlay.nudge_scroll(-SCROLL_STEP),

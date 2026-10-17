@@ -7,9 +7,12 @@ Uses only documented Win32 calls:
   builds older than 19041 the flag degrades to ``WDA_MONITOR`` (a black box).
 * ``WS_EX_TOOLWINDOW`` (and clearing ``WS_EX_APPWINDOW``) — removes the window
   from the taskbar and Alt-Tab.
-* optionally ``WS_EX_TRANSPARENT | WS_EX_LAYERED`` — click-through.
+* optionally ``WS_EX_TRANSPARENT | WS_EX_LAYERED`` — click-through; off
+  Windows the same toggle falls back to Qt's ``WindowTransparentForInput``
+  flag (X11/XWayland honour it; Wayland compositors vary).
 
-Everything is a no-op on non-Windows platforms.
+The capture/taskbar helpers are no-ops on non-Windows platforms; the
+click-through toggle has the portable fallback above.
 """
 
 from __future__ import annotations
@@ -85,21 +88,40 @@ def apply_tool_window(widget: Any) -> None:
         pass
 
 
-def set_click_through(widget: Any, enabled: bool) -> None:
-    """Let mouse events pass through the window when enabled."""
-    if not IS_WINDOWS:
-        return
-    try:  # pragma: no cover - windows only
-        user32 = _user32()
-        hwnd = int(widget.winId())
-        style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        if enabled:
-            style |= WS_EX_TRANSPARENT | WS_EX_LAYERED
-        else:
-            style &= ~WS_EX_TRANSPARENT
-        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+def set_click_through(widget: Any, enabled: bool) -> bool:
+    """Let mouse events pass through the window when enabled.
+
+    Windows flips ``WS_EX_TRANSPARENT | WS_EX_LAYERED`` on the native handle.
+    Everywhere else the portable ``Qt.WindowTransparentForInput`` flag is used;
+    changing window flags hides the widget, so a visible window is re-shown
+    right away (position is preserved on X11; some Wayland compositors may
+    re-place the window — the mode still works, the geometry just moves).
+
+    Returns ``True`` when the toggle was applied.
+    """
+    if IS_WINDOWS:
+        try:  # pragma: no cover - windows only
+            user32 = _user32()
+            hwnd = int(widget.winId())
+            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            if enabled:
+                style |= WS_EX_TRANSPARENT | WS_EX_LAYERED
+            else:
+                style &= ~WS_EX_TRANSPARENT
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            return True
+        except Exception:
+            return False
+    try:
+        from PySide6.QtCore import Qt  # local import: keep this module Qt-free on Windows
+
+        was_visible = bool(widget.isVisible())
+        widget.setWindowFlag(Qt.WindowTransparentForInput, enabled)
+        if was_visible:
+            widget.show()  # flag changes hide the window; bring it straight back
+        return True
     except Exception:
-        pass
+        return False
 
 
 def apply_stealth(widget: Any) -> None:

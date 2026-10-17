@@ -499,6 +499,7 @@ def test_app_controller_wiring(qt_app, tmp_path, monkeypatch):
         "opacity_down",
         "opacity_up",
         "collapse",
+        "click_through",
     ):
         controller._on_hotkey(action)  # noqa: SLF001
 
@@ -638,3 +639,35 @@ def test_overlay_retranslates_when_the_language_changes(qt_app, tmp_path, monkey
         overlay.close()
     finally:
         i18n.set_language("en")
+
+
+def test_click_through_toggle_state_machine(qt_app, tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, "save", lambda self: None)  # never touch ~/.opengirgit
+    settings = _settings(tmp_path)
+    overlay = OverlayWindow(_StubApi(), settings, ConversationStore(), lambda: "")
+    overlay.show()
+    qt_app.processEvents()
+
+    assert overlay._click_through is False  # noqa: SLF001
+    overlay.toggle_click_through()
+    assert overlay._click_through is True  # noqa: SLF001
+    assert overlay._click_button.isChecked() is True  # noqa: SLF001
+    assert "click-through on" in overlay._status_text  # noqa: SLF001
+    assert settings.hotkeys["click_through"] in overlay._status_text  # noqa: SLF001
+    assert overlay.windowFlags() & Qt.WindowTransparentForInput  # portable fallback
+
+    overlay.toggle_click_through()
+    assert overlay._click_through is False  # noqa: SLF001
+    assert overlay._click_button.isChecked() is False  # noqa: SLF001
+    assert overlay._status_text == "click-through off"  # noqa: SLF001
+    assert not (overlay.windowFlags() & Qt.WindowTransparentForInput)
+
+    # without a hotkey there would be no way back: refuse to enable
+    settings.hotkeys["click_through"] = ""
+    overlay.toggle_click_through()
+    assert overlay._click_through is False  # noqa: SLF001
+    assert "hotkey" in overlay._status_text  # noqa: SLF001
+    overlay.close()
+    overlay.deleteLater()
+
+

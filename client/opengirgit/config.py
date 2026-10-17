@@ -23,6 +23,7 @@ DEFAULT_HOTKEYS: dict[str, str] = {
     "ask": "Shift+Alt+A",
     "erase": "Shift+Alt+D",
     "screenshot": "Shift+Alt+S",
+    "click_through": "Shift+Alt+C",
     "prev": "Shift+Alt+[",
     "next": "Shift+Alt+]",
     "scroll_up": "Shift+Alt+W",

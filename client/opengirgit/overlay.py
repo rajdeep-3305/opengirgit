@@ -174,6 +174,9 @@ class OverlayWindow(QWidget):
         self._last_auto_time = 0.0
         self._drag_offset: QPoint | None = None
 
+        # Session-only click-through mode (mouse events reach the app below).
+        self._click_through = False
+
         # Screenshots queue up and attach to the next question (like the original).
         self._pending_images: list[str] = []
         self._pending_widgets: list[_PendingThumb] = []
@@ -232,6 +235,8 @@ class OverlayWindow(QWidget):
             row1.addWidget(button)
             return button
 
+        self._click_button = _nav_button("🖱", self.toggle_click_through)
+        self._click_button.setCheckable(True)
         self._info_button = _nav_button("🗂", self.info_requested.emit)
         self._history_button = _nav_button("🕘", self.history_requested.emit)
         self._settings_button = _nav_button("⚙", self.settings_requested.emit)
@@ -331,6 +336,11 @@ class OverlayWindow(QWidget):
         """(Re)apply the active language to the static interface texts."""
         self._mic_button.setToolTip(tr("Listen to system audio / microphone"))
         self._device_combo.setToolTip(tr("Audio device to listen to"))
+        self._click_button.setToolTip(
+            tr("Click-through — clicks work through to the app underneath ({hotkey})").format(
+                hotkey=self._settings.hotkeys.get("click_through", "")
+            )
+        )
         self._info_button.setToolTip(tr("Interview details (resume, JD, company)"))
         self._history_button.setToolTip(tr("History"))
         self._settings_button.setToolTip(tr("Settings"))
@@ -861,6 +871,35 @@ class OverlayWindow(QWidget):
     def set_collapsed(self, collapsed: bool) -> None:
         if self._answer_panel.isVisible() == collapsed:
             self.toggle_collapse()
+
+    # ------------------------------------------------------------ click-through #
+
+    def toggle_click_through(self) -> None:
+        """Pass the mouse through to the app underneath (hotkey switches back)."""
+        self.set_click_through_enabled(not self._click_through)
+
+    def set_click_through_enabled(self, enabled: bool) -> None:
+        if enabled == self._click_through:
+            return
+        hotkey = self._settings.hotkeys.get("click_through", "")
+        if enabled and not hotkey:
+            self.set_status(
+                tr("click-through needs a hotkey to switch back — set one in Settings"),
+                error=True,
+            )
+            return
+        if not stealth.set_click_through(self, enabled):
+            self._click_button.setChecked(False)
+            self.set_status(tr("click-through is unavailable on this system"), error=True)
+            return
+        self._click_through = enabled
+        self._click_button.setChecked(enabled)
+        if enabled:
+            self.set_status(
+                tr("click-through on — {hotkey} returns control").format(hotkey=hotkey)
+            )
+        else:
+            self.set_status(tr("click-through off"))
 
     def nudge_opacity(self, delta: float) -> None:
         value = min(max(self.windowOpacity() + delta, 0.3), 1.0)
