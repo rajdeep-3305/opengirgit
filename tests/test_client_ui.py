@@ -27,6 +27,7 @@ from opengirgit.dialogs import (  # noqa: E402
     SettingsDialog,
 )
 from opengirgit.overlay import OverlayWindow  # noqa: E402
+from opengirgit.stealth import IS_WINDOWS  # noqa: E402
 from opengirgit.stores import ConversationStore  # noqa: E402
 from PySide6.QtCore import QBuffer, QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QGuiApplication, QPixmap  # noqa: E402
@@ -801,13 +802,16 @@ def test_click_through_toggle_state_machine(qt_app, tmp_path, monkeypatch):
     assert overlay._click_button.isChecked() is True  # noqa: SLF001
     assert "click-through on" in overlay._status_text  # noqa: SLF001
     assert settings.hotkeys["click_through"] in overlay._status_text  # noqa: SLF001
-    assert overlay.windowFlags() & Qt.WindowTransparentForInput  # portable fallback
+    if not IS_WINDOWS:
+        # Windows flips native WS_EX_* styles instead of the Qt flag.
+        assert overlay.windowFlags() & Qt.WindowTransparentForInput  # portable fallback
 
     overlay.toggle_click_through()
     assert overlay._click_through is False  # noqa: SLF001
     assert overlay._click_button.isChecked() is False  # noqa: SLF001
     assert overlay._status_text == "click-through off"  # noqa: SLF001
-    assert not (overlay.windowFlags() & Qt.WindowTransparentForInput)
+    if not IS_WINDOWS:
+        assert not (overlay.windowFlags() & Qt.WindowTransparentForInput)
 
     # without a hotkey there would be no way back: refuse to enable
     settings.hotkeys["click_through"] = ""
