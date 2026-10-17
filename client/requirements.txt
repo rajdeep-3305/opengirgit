@@ -23,5 +23,5 @@ faster-whisper>=1.0
 websockets>=12,<17
 
 # Resume text extraction
-pypdf>=4.0
+pypdf>=6.20.1
 python-docx>=1.1
