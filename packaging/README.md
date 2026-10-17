@@ -71,6 +71,22 @@ active). For a source checkout the same trick works when systemd is present:
 systemd-run --user --scope -u app-org.opengirgit.OpenGirGit-$$ ./run.sh
 ```
 
+## Icon
+
+`org.opengirgit.OpenGirGit.svg` is the single source for the app mark (shipped
+as-is by `install-linux.sh` into `hicolor/scalable/apps`).
+`OpenGirGit.ico` is the Windows multi-size icon used by the PyInstaller spec and
+the installer — regenerate it from the SVG whenever the mark changes:
+
+```bash
+# needs librsvg2-bin + imagemagick
+for s in 16 24 32 48 64 128 256; do
+    rsvg-convert -w $s -h $s org.opengirgit.OpenGirGit.svg -o icon-$s.png
+done
+magick icon-16.png icon-24.png icon-32.png icon-48.png icon-64.png \
+       icon-128.png icon-256.png OpenGirGit.ico
+```
+
 ## Notes and caveats
 
 * **Size.** The folder is large (PySide6 + QtWebEngine + faster-whisper/ctranslate2
