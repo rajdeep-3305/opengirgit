@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import json
+import socket
+import ssl
 import time
 from collections.abc import Callable
 from typing import Any
 
 import httpx
+
+try:  # pulled in by httpx, but imported directly for the trust-store fallback
+    import certifi
+except ImportError:  # pragma: no cover - certifi is an httpx dependency
+    certifi = None  # type: ignore[assignment]
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
 STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=10.0)
@@ -46,6 +53,77 @@ def _websocket_url(base_url: str) -> str:
     if base_url.startswith("http://"):
         return "ws://" + base_url[len("http://") :]
     return "ws://" + base_url
+
+
+_TRUST_CONTEXT: ssl.SSLContext | None = None
+
+
+def _error_chain(exc: BaseException) -> str:
+    """Every message in an exception's cause/context chain, newest first."""
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        parts.append(str(current))
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return "\n".join(parts)
+
+
+def _ssl_cause(exc: BaseException) -> ssl.SSLError | None:
+    """The ``ssl`` error buried in a transport exception, if there is one."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, ssl.SSLError):
+            return current
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _is_certificate_error(exc: BaseException) -> bool:
+    if isinstance(_ssl_cause(exc), ssl.SSLCertVerificationError):
+        return True
+    return "certificate verify failed" in _error_chain(exc).lower()
+
+
+def trust_store_context() -> ssl.SSLContext:
+    """Trust roots from the OS store plus certifi (built once, then cached).
+
+    ``httpx`` verifies against the certifi bundle alone, so a proxy or
+    antivirus that injects its own root *the OS trusts* still fails; this
+    context is the union used for one rescue retry.
+    """
+    global _TRUST_CONTEXT
+    if _TRUST_CONTEXT is None:
+        context = ssl.create_default_context()  # the OS trust store
+        if certifi is not None:
+            try:
+                context.load_verify_locations(certifi.where())
+            except Exception:  # pragma: no cover - defensive
+                pass
+        _TRUST_CONTEXT = context
+    return _TRUST_CONTEXT
+
+
+def _connect_error_message(exc: BaseException, base_url: str) -> str:
+    """A classified, human-readable story for a connection failure."""
+    text = _error_chain(exc).lower()
+    if _is_certificate_error(exc):
+        return (
+            f"TLS certificate for {base_url} is not trusted — even the OS trust "
+            "store does not know it; a proxy or antivirus may be intercepting HTTPS"
+        )
+    if _ssl_cause(exc) is not None:
+        return f"TLS handshake with {base_url} failed — is the address right (http vs https)?"
+    if isinstance(exc.__cause__, socket.gaierror) or "getaddrinfo" in text:
+        return f"cannot resolve {base_url} — check the address and DNS"
+    if isinstance(exc.__cause__, ConnectionRefusedError) or "connection refused" in text:
+        return f"connection refused by {base_url} — is the server running?"
+    if "timed out" in text:
+        return f"{base_url} did not answer in time"
+    return f"cannot reach {base_url} — is the server running?"
 
 
 class ApiClient:
@@ -89,17 +167,27 @@ class ApiClient:
         """
         url = f"{self.base_url}{path}"
         attempt = 0
+        verify: ssl.SSLContext | None = None
         while True:
+            request_kwargs: dict[str, Any] = {
+                "json": payload,
+                "headers": self._headers(),
+                "timeout": timeout or self.timeout,
+            }
+            if verify is not None:
+                request_kwargs["verify"] = verify
             try:
-                response = httpx.request(
-                    method,
-                    url,
-                    json=payload,
-                    headers=self._headers(),
-                    timeout=timeout or self.timeout,
-                )
+                response = httpx.request(method, url, **request_kwargs)
                 break
             except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                if _is_certificate_error(exc):
+                    if verify is None:
+                        # certifi and the OS trust store disagree (proxy/AV
+                        # roots): retry once against their union. A cert error
+                        # is deterministic, so backoff retries are pointless.
+                        verify = trust_store_context()
+                        continue
+                    raise ApiError(_connect_error_message(exc, self.base_url)) from exc
                 if attempt < retries:
                     delay = self.retry_backoff[min(attempt, len(self.retry_backoff) - 1)]
                     time.sleep(delay)
@@ -107,7 +195,7 @@ class ApiClient:
                     continue
                 if isinstance(exc, httpx.TimeoutException):
                     raise ApiError("the server took too long to answer") from exc
-                raise ApiError(f"cannot reach {self.base_url} — is the server running?") from exc
+                raise ApiError(_connect_error_message(exc, self.base_url)) from exc
             except httpx.HTTPError as exc:
                 raise ApiError(f"network error: {exc}") from exc
 
@@ -290,41 +378,52 @@ class ApiClient:
         url = f"{self.base_url}{path}"
         chunks: list[str] = []
         headers = {**self._headers(), "Accept": "text/event-stream"}
-        try:
-            with httpx.Client(timeout=STREAM_TIMEOUT) as client:
-                with client.stream("POST", url, json=payload, headers=headers) as response:
-                    if response.status_code >= 400:
-                        response.read()
-                        raise ApiError(_error_message(response), status_code=response.status_code)
-                    for line in response.iter_lines():
-                        if cancel is not None and cancel():
-                            raise Cancelled()
-                        if not line or not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if not data:
-                            continue
-                        try:
-                            event = json.loads(data)
-                        except json.JSONDecodeError:
-                            continue
-                        if event.get("error"):
-                            raise ApiError(str(event["error"]))
-                        text = event.get("chunk")
-                        if isinstance(text, str) and text:
-                            chunks.append(text)
-                            if on_chunk is not None:
-                                on_chunk(text)
-                        if event.get("done"):
-                            return "".join(chunks)
-        except Cancelled:
-            raise
-        except ApiError:
-            raise
-        except httpx.ConnectError as exc:
-            raise ApiError(f"cannot reach {self.base_url} — is the server running?") from exc
-        except httpx.HTTPError as exc:
-            raise ApiError(f"streaming failed: {exc}") from exc
+        verify: ssl.SSLContext | None = None
+        while True:
+            try:
+                client_kwargs: dict[str, Any] = {"timeout": STREAM_TIMEOUT}
+                if verify is not None:
+                    client_kwargs["verify"] = verify
+                with httpx.Client(**client_kwargs) as client:
+                    with client.stream("POST", url, json=payload, headers=headers) as response:
+                        if response.status_code >= 400:
+                            response.read()
+                            raise ApiError(_error_message(response), status_code=response.status_code)
+                        for line in response.iter_lines():
+                            if cancel is not None and cancel():
+                                raise Cancelled()
+                            if not line or not line.startswith("data:"):
+                                continue
+                            data = line[5:].strip()
+                            if not data:
+                                continue
+                            try:
+                                event = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
+                            if event.get("error"):
+                                raise ApiError(str(event["error"]))
+                            text = event.get("chunk")
+                            if isinstance(text, str) and text:
+                                chunks.append(text)
+                                if on_chunk is not None:
+                                    on_chunk(text)
+                            if event.get("done"):
+                                return "".join(chunks)
+                break  # the stream ended without a done frame
+            except Cancelled:
+                raise
+            except ApiError:
+                raise
+            except httpx.ConnectError as exc:
+                if verify is None and not chunks and _is_certificate_error(exc):
+                    # certifi and the OS trust store disagree (proxy/AV roots):
+                    # retry once against their union before giving up.
+                    verify = trust_store_context()
+                    continue
+                raise ApiError(_connect_error_message(exc, self.base_url)) from exc
+            except httpx.HTTPError as exc:
+                raise ApiError(f"streaming failed: {exc}") from exc
         return "".join(chunks)
 
     # -- WebSocket ---------------------------------------------------------- #
@@ -348,16 +447,30 @@ class ApiClient:
             raise _WebSocketUnavailable("the 'websockets' package is not installed") from exc
 
         url = f"{_websocket_url(self.base_url)}/api/llm/ws"
+        dial_kwargs: dict[str, Any] = {
+            "additional_headers": self._headers(),
+            "open_timeout": 10,
+            "close_timeout": 2,
+            "max_size": 2**22,
+        }
+
+        def dial() -> Any:
+            return connect(url, **dial_kwargs)
+
         try:
-            connection = connect(
-                url,
-                additional_headers=self._headers(),
-                open_timeout=10,
-                close_timeout=2,
-                max_size=2**22,
-            )
+            connection = dial()
         except Exception as exc:  # noqa: BLE001 - connect-level failure: SSE fallback
-            raise _WebSocketUnavailable(str(exc)) from exc
+            if not _is_certificate_error(exc):
+                raise _WebSocketUnavailable(str(exc)) from exc
+            # certifi and the OS trust store disagree (proxy/AV roots): one
+            # retry against their union before falling back to SSE.
+            dial_kwargs["ssl"] = trust_store_context()
+            try:
+                connection = dial()
+            except Exception as retry_exc:  # noqa: BLE001
+                raise _WebSocketUnavailable(
+                    _connect_error_message(retry_exc, self.base_url)
+                ) from retry_exc
 
         chunks: list[str] = []
         with connection:

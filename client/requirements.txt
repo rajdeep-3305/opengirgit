@@ -1,6 +1,9 @@
 # Core (all platforms)
 PySide6>=6.6,<7
 httpx>=0.27,<1
+# httpx already requires certifi; declared because api.py imports it directly
+# for the OS-trust-store fallback (corporate proxies / antivirus roots).
+certifi
 numpy>=1.26
 python-dotenv>=1.0,<2
 

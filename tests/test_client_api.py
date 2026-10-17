@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import socket
+import ssl
 
 import pytest
 from opengirgit import api as api_module
@@ -169,7 +171,7 @@ def test_send_otp_gives_up_after_backoff(monkeypatch):
         raise api_module.httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(api_module.httpx, "request", fake_request)
-    with pytest.raises(ApiError, match="cannot reach"):
+    with pytest.raises(ApiError, match="connection refused"):
         _no_sleep_client().send_otp("a@b.c")
     assert calls["n"] == 4  # first try + 3 retries
 
@@ -214,6 +216,124 @@ def test_feedback_payload(monkeypatch):
     assert captured["method"] == "POST"
     assert captured["url"].endswith("/api/feedback/submit")
     assert captured["json"] == {"message": "hi", "email": "a@b.c", "app_version": "9.9"}
+
+
+# --------------------------------------------------------------------------- #
+# Connection-failure classification and the OS-trust-store rescue
+# --------------------------------------------------------------------------- #
+
+
+def _connect_error(message: str, cause: BaseException | None = None):
+    error = api_module.httpx.ConnectError(message)
+    error.__cause__ = cause
+    return error
+
+
+def _cert_error() -> ssl.SSLCertVerificationError:
+    return ssl.SSLCertVerificationError(1, "certificate verify failed")
+
+
+def test_certificate_error_retries_once_through_the_os_trust_store(monkeypatch):
+    verifies: list = []
+
+    def fake_request(method, url, **kwargs):
+        verifies.append(kwargs.get("verify"))
+        if len(verifies) == 1:
+            raise _connect_error("certificate verify failed", _cert_error())
+        return _JsonResponse({"sent": True})
+
+    monkeypatch.setattr(api_module.httpx, "request", fake_request)
+    assert _no_sleep_client().send_otp("a@b.c") == {"sent": True}
+    assert len(verifies) == 2
+    assert verifies[0] is None  # the first try trusts certifi like httpx does
+    assert isinstance(verifies[1], ssl.SSLContext)
+
+
+def test_certificate_error_after_the_trust_store_is_diagnosed(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_request(*args, **kwargs):
+        calls["n"] += 1
+        raise _connect_error("certificate verify failed", _cert_error())
+
+    monkeypatch.setattr(api_module.httpx, "request", fake_request)
+    with pytest.raises(ApiError, match="TLS certificate"):
+        _no_sleep_client().send_otp("a@b.c")
+    # Exactly one rescue retry — no backoff attempts against a broken cert.
+    assert calls["n"] == 2
+
+
+def test_connect_error_messages_are_classified(monkeypatch):
+    def dns_failure(*args, **kwargs):
+        cause = socket.gaierror(-2, "Name or service not known")
+        raise _connect_error("getaddrinfo failed", cause)
+
+    monkeypatch.setattr(api_module.httpx, "request", dns_failure)
+    with pytest.raises(ApiError, match="cannot resolve"):
+        ApiClient("http://x").verify_otp("a@b.c", "123456")
+
+    def refused(*args, **kwargs):
+        cause = ConnectionRefusedError(111, "Connection refused")
+        raise _connect_error("connection refused", cause)
+
+    monkeypatch.setattr(api_module.httpx, "request", refused)
+    with pytest.raises(ApiError, match="connection refused"):
+        ApiClient("http://x").verify_otp("a@b.c", "123456")
+
+    def handshake(*args, **kwargs):
+        cause = ssl.SSLError(1, "[SSL: WRONG_VERSION_NUMBER] wrong version number")
+        raise _connect_error("wrong version number", cause)
+
+    monkeypatch.setattr(api_module.httpx, "request", handshake)
+    with pytest.raises(ApiError, match="TLS handshake"):
+        ApiClient("http://x").verify_otp("a@b.c", "123456")
+
+
+def test_sse_certificate_error_retries_with_the_trust_store(monkeypatch):
+    verifies: list = []
+
+    class _CertFailingClient:
+        def __init__(self, *args, **kwargs) -> None:
+            verifies.append(kwargs.get("verify"))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> bool:
+            return False
+
+        def stream(self, method, url, json=None, headers=None, **kwargs):
+            if len(verifies) == 1:
+                raise _connect_error("certificate verify failed", _cert_error())
+            return _FakeResponse(_sse({"chunk": "ok"}, {"done": True}))
+
+    monkeypatch.setattr(api_module.httpx, "Client", _CertFailingClient)
+    assert ApiClient("http://x").chat_stream("hi") == "ok"
+    assert verifies[0] is None
+    assert isinstance(verifies[1], ssl.SSLContext)
+
+
+def test_sse_certificate_error_is_diagnosed_after_the_retry(monkeypatch):
+    attempts = {"n": 0}
+
+    class _AlwaysCertFailingClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> bool:
+            return False
+
+        def stream(self, *args, **kwargs):
+            attempts["n"] += 1
+            raise _connect_error("certificate verify failed", _cert_error())
+
+    monkeypatch.setattr(api_module.httpx, "Client", _AlwaysCertFailingClient)
+    with pytest.raises(ApiError, match="TLS certificate"):
+        ApiClient("http://x").chat_stream("hi")
+    assert attempts["n"] == 2
 
 
 # --------------------------------------------------------------------------- #
@@ -334,6 +454,41 @@ def test_websocket_forced_transport_surfaces_the_failure(monkeypatch):
     _install_ws(monkeypatch, _FakeWsConnection([]), fail_connect=OSError("connection refused"))
     _FakeClient.lines = _sse({"chunk": "via sse"}, {"done": True})
     with pytest.raises(ApiError, match="websocket transport unavailable"):
+        ApiClient("http://x", transport="websocket").chat_stream("hi")
+
+
+def test_websocket_certificate_error_retries_with_the_trust_store(monkeypatch):
+    _require_websockets()
+    import websockets.sync.client as ws_client
+
+    connection = _FakeWsConnection(
+        [json.dumps({"chunk": "ok"}), json.dumps({"done": True})]
+    )
+    ssl_args: list = []
+
+    def connect(url, **kwargs):
+        ssl_args.append(kwargs.get("ssl"))
+        if len(ssl_args) == 1:
+            raise _connect_error("certificate verify failed", _cert_error())
+        return connection
+
+    monkeypatch.setattr(ws_client, "connect", connect)
+    monkeypatch.setattr(ApiClient, "_stream_ws", _REAL_STREAM_WS)
+    assert ApiClient("http://x", transport="websocket").chat_stream("hi") == "ok"
+    assert ssl_args[0] is None
+    assert isinstance(ssl_args[1], ssl.SSLContext)
+
+
+def test_websocket_certificate_error_surfaces_a_tls_message(monkeypatch):
+    _require_websockets()
+    import websockets.sync.client as ws_client
+
+    def connect(url, **kwargs):
+        raise _connect_error("certificate verify failed", _cert_error())
+
+    monkeypatch.setattr(ws_client, "connect", connect)
+    monkeypatch.setattr(ApiClient, "_stream_ws", _REAL_STREAM_WS)
+    with pytest.raises(ApiError, match="TLS certificate"):
         ApiClient("http://x", transport="websocket").chat_stream("hi")
 
 
