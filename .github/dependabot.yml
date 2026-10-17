@@ -1,0 +1,16 @@
+# Keep the two components and the workflow actions up to date.
+# Security updates are handled separately through Dependabot alerts.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /server
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /client
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
