@@ -109,6 +109,8 @@ exe = EXE(  # noqa: F821
     strip=False,
     upx=False,
     console=True,  # keeps server/OTP logs visible; see packaging/README.md
+    # Windows exe icon (multi-size .ico); ignored/None elsewhere.
+    icon=str(ROOT / "packaging" / "OpenGirGit.ico") if sys.platform == "win32" else None,
 )
 
 coll = COLLECT(  # noqa: F821

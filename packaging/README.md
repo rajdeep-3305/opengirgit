@@ -33,6 +33,24 @@ Useful defaults set by the launcher:
 | `HOST` / `PORT` | `127.0.0.1` / `8000` |
 | `OPENGIRGIT_SERVER_URL` | `http://HOST:PORT` |
 
+## Windows installer
+
+`install-windows.iss` ([Inno Setup 6](https://jrsoftware.org/isinfo.php)) wraps
+the PyInstaller folder into `OpenGirGit-windows-x64-setup.exe`:
+
+```powershell
+# after the PyInstaller build above:
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\install-windows.iss
+```
+
+It installs **per user** (`PrivilegesRequired=lowest`): no UAC prompt, files in
+`%LOCALAPPDATA%\Programs\OpenGirGit`, start-menu entry, optional desktop icon,
+German + English wizard, MIT license shown before install, and a normal
+uninstaller. Runtime configuration is unchanged (`.env` next to the exe). The
+installer is **not code-signed** — Windows SmartScreen will warn once, "More
+info → Run anyway" is expected. Release tags build and attach it automatically;
+re-running a newer installer upgrades in place.
+
 ## Linux bundle
 
 The same spec builds on Linux (`dist/OpenGirGit/OpenGirGit`, one folder; CI
