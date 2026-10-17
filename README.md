@@ -202,7 +202,9 @@ Health check: `curl http://127.0.0.1:8000/api/health`
 > **OTP dev mode.** Without SMTP configured the server returns the login code in
 > the API response and prints it in the console (the client fills it in
 > automatically). Set `SMTP_HOST` … to send real email, or set
-> `ALLOW_DEV_OTP_ECHO=false` to disable the echo.
+> `ALLOW_DEV_OTP_ECHO=false` to disable the echo. A non-loopback `HOST` refuses
+> to start while the echo is on without SMTP, and while `JWT_SECRET` is still
+> the shipped default (or shorter than 32 characters).
 
 #### 2. Client
 
@@ -238,10 +240,11 @@ All server settings are environment variables (or `server/.env`); see
 |---|---|---|
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | Bind address. Use `0.0.0.0` to serve other machines. |
 | `DATA_DIR` | `data` | SQLite location. |
-| `JWT_SECRET` | `dev-secret-change-me-use-32-bytes-minimum` | **Change this.** HMAC key for access tokens (≥32 chars). |
+| `JWT_SECRET` | `dev-secret-change-me-use-32-bytes-minimum` | **Change this.** HMAC key for access tokens (≥32 chars); a non-loopback bind refuses to start with the default. |
 | `JWT_EXPIRE_MINUTES` | `10080` | Token lifetime (7 days). |
 | `OTP_TTL_SECONDS` / `OTP_MAX_ATTEMPTS` / `OTP_RATE_LIMIT_SECONDS` | `300` / `5` / `30` | OTP policy. |
-| `ALLOW_DEV_OTP_ECHO` | `true` | Return the OTP in the response **when no SMTP is configured**. |
+| `ALLOW_DEV_OTP_ECHO` | `true` | Return the OTP in the response **when no SMTP is configured**; a non-loopback bind refuses to start with this on. |
+| `CORS_ORIGINS` | empty | Comma-separated browser origins; empty = CORS **off** (the desktop client needs none). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS` | – | Real email delivery. |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible base URL. |
 | `LLM_API_KEY` | – | Bearer key for the LLM endpoint. |
@@ -282,8 +285,11 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `hotkeys` | see below | Hotkey combos as `"Shift+Alt+K"` strings; editable in the settings dialog (an empty value disables a hotkey). |
 
 Files written by the client: `~/.opengirgit/{config,credentials,context,conversations,resume_cache}.json`.
-`credentials.json` is plaintext and contains a bearer token — keep it out of
-version control (the repository `.gitignore` already ignores it).
+`credentials.json` contains a bearer token: the client prefers the **OS keyring**
+(Windows Credential Manager, macOS Keychain, Secret Service on Linux) and only
+falls back to the plaintext file, which is written **owner-only** (`0600`) like
+the other store files. Keep it out of version control (the repository
+`.gitignore` already ignores it).
 
 ## Platform support
 
@@ -547,6 +553,7 @@ runs the core suite as a first line of defence.
 | Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case) |
 | Translations (i18n) | ✅ catalog/fallback/placeholder tests, offscreen German retranslation; ⏳ native-speaker review of the German values |
 | Linux system audio (`parec`) | ✅ verified live on PipeWire: `stt_smoke.py --capture 16 --source system` recorded the speaker monitor and transcribed the JFK clip **word-perfect** (8 partial updates, VAD gate intact); `pactl` parsing/device ids unit-tested |
+| Server security policy | ✅ HMAC-hashed OTPs (`compare_digest`), per-email send cooldown, attempt cap, JWT claim validation; non-loopback binds refuse to start with the default secret or the dev OTP echo; CORS off unless configured; client stores written owner-only; unit-tested |
 | Wayland screenshots (portal) | ✅ verified live on GNOME 51/Wayland: the portal returns a 2880×1800 pixmap (DPR 2.0) and its file is removed afterwards; the frozen-selector crop math is unit-tested (scale, multi-monitor offset, null background); ⏳ your own walkthrough in [`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md) |
 | Wayland hotkeys (GlobalShortcuts portal) | ✅ request/response plumbing and trigger conversion (`ALT+SHIFT+a`) unit-tested, `CreateSession` verified live; the portal refuses app-id-less launches, which the manager detects and reports; ⏳ end-to-end binding from the launcher entry (desktop confirmation dialog) |
 | X11 hotkeys (`XGrabKey` via `libX11`) | ✅ verified live against XWayland: grabs accepted, invalid specs and conflicts rejected cleanly, `XSync` error snap-back unit-tested with a fake grabber; ⏳ a native X11 session |
