@@ -1,4 +1,7 @@
 # Keep the two components and the workflow actions up to date.
+#
+# Minor and patch bumps are grouped per component so a weekly run produces at
+# most three reviewable pull requests; major bumps still arrive individually.
 # Security updates are handled separately through Dependabot alerts.
 version: 2
 updates:
@@ -6,11 +9,23 @@ updates:
     directory: /server
     schedule:
       interval: weekly
+    groups:
+      server-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: pip
     directory: /client
     schedule:
       interval: weekly
+    groups:
+      client-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
