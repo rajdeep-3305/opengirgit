@@ -152,6 +152,14 @@ class ResumeCache:
 # --------------------------------------------------------------------------- #
 
 
+def _session_title(question: str) -> str:
+    """A session name taken from its first question (history/export label)."""
+    line = " ".join((question or "").split())
+    if not line:
+        return "Interview session"
+    return line if len(line) <= 60 else line[:59].rstrip() + "…"
+
+
 class ConversationStore:
     """Bounded local Q&A history (never sent anywhere)."""
 
@@ -180,6 +188,10 @@ class ConversationStore:
             session = self._current()
         if session is None:  # pragma: no cover - defensive
             return
+        if not session["items"] and session.get("title") in ("", "Interview session"):
+            # Name the session after its first question: the history dialog
+            # (and the Markdown export) is far easier to navigate that way.
+            session["title"] = _session_title(question)
         session["items"].append(
             {"question": question, "answer": answer, "kind": kind, "ts": _now()}
         )

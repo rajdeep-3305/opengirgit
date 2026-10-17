@@ -44,6 +44,28 @@ def test_conversation_store_caps_sessions(tmp_path, monkeypatch):
     assert store.sessions()[0]["title"] == f"session {stores.MAX_SESSIONS + 4}"
 
 
+def test_conversation_store_names_sessions_after_the_first_question(tmp_path, monkeypatch):
+    monkeypatch.setattr(stores, "CONVERSATIONS_PATH", tmp_path / "c.json")
+    store = stores.ConversationStore()
+    store.add_item("Explain closures in JavaScript: scope and capture", "A closure…")
+    store.add_item("And in Python?", "Almost the same…")
+    assert store.sessions()[0]["title"] == "Explain closures in JavaScript: scope and capture"
+
+    # An explicitly named session keeps its name.
+    store.start_session("Named by hand")
+    store.add_item("q", "a")
+    assert store.sessions()[0]["title"] == "Named by hand"
+
+    # A question that is too long (or empty) still yields a usable label.
+    store.start_session()
+    store.add_item("y" * 200, "a")
+    long_title = store.sessions()[0]["title"]
+    assert len(long_title) == 60 and long_title.endswith("…")
+    store.start_session()
+    store.add_item("   \n  ", "a")
+    assert store.sessions()[0]["title"] == "Interview session"
+
+
 def test_context_store_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(stores, "CONTEXT_PATH", tmp_path / "context.json")
     context = stores.ContextStore()
