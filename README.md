@@ -161,9 +161,11 @@ instant), starts the API server, waits for `/api/health`, then opens the client.
 `--no-server` / `--no-client` run only one half.
 
 Prebuilt **Windows and Linux** bundles (one folder, client + server, no Python
-needed) are attached to GitHub releases by CI — the Linux tarball ships
-`install-linux.sh`, which registers the launcher entry the desktop needs for
-portal hotkeys. See [`packaging/`](packaging/README.md) for building your own.
+needed) are attached to GitHub releases by CI — Windows also gets a **per-user
+installer** (`OpenGirGit-windows-x64-setup.exe`, no admin prompt, English/German
+wizard), and the Linux tarball ships `install-linux.sh`, which registers the
+launcher entry the desktop needs for portal hotkeys. See
+[`packaging/`](packaging/README.md) for building your own.
 
 ### Manual setup
 
