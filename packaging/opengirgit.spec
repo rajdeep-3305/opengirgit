@@ -50,6 +50,8 @@ for package in (
     "av",
     "websockets",
     "sounddevice",
+    # Loaded dynamically by Python-Markdown for the original answer styling.
+    "pymdownx",
 ):
     try:
         pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)

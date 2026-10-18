@@ -1,10 +1,9 @@
-"""Optional QtWebEngine answer view: LaTeX math (KaTeX) and mermaid diagrams.
+"""The original Chromium answer view: Markdown, code, LaTeX and mermaid.
 
-The primary answer panel is a ``QTextBrowser`` — fast and dependency-free.
-This module adds a second renderer used only when an answer actually contains
-math or a mermaid fence: a ``QWebEngineView`` that loads KaTeX and mermaid
-from the JS assets vendored in ``opengirgit/assets`` (MIT; no network access,
-no CDN).
+The overlay shows answers in a ``QWebEngineView`` that loads KaTeX,
+mermaid and highlight.js from assets vendored in ``opengirgit/assets`` (no
+network access, no CDN).  A hidden ``QTextBrowser`` remains as a fallback for
+installations without QtWebEngine.
 
 Everything here is imported lazily by the overlay, because importing
 QtWebEngine is expensive and the module may be missing entirely (a
@@ -13,9 +12,11 @@ QtWebEngine is expensive and the module may be missing entirely (a
 
 from __future__ import annotations
 
+import html as _html
 import json
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, Signal
@@ -24,160 +25,286 @@ from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from . import ui_icons
+from .config import DEFAULT_HOTKEYS
+
 #: Page background, matching the overlay's answer panel.
 PANEL_BACKGROUND = "#2a2a2a"
 
 _TEMPLATE = """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>answer</title>
+<link rel="stylesheet" href="highlight/github-dark.min.css">
 <link rel="stylesheet" href="katex/katex.min.css">
+<script src="highlight/highlight.min.js"></script>
 <script src="katex/katex.min.js"></script>
 <script src="katex/auto-render.min.js"></script>
 <script src="mermaid/mermaid.min.js"></script>
 <style>
   ::-webkit-scrollbar { display: none; }
   * { cursor: default !important; }
-  html { background-color: #2a2a2a; }
-  body { background-color: #2a2a2a; color: #ececf1; margin: 0;
-         font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
-         font-size: 15px; line-height: 1.65; padding: 10px;
-         max-width: 100%; word-wrap: break-word; overflow-anchor: none;
-         -webkit-font-smoothing: antialiased; }
+  body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      color: #ececf1;
+      background-color: #2a2a2a;
+      padding: 10px;
+      max-width: 100%;
+      word-wrap: break-word;
+      overflow-y: auto;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+      overflow-anchor: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+  }
+  #content { overflow-anchor: none; }
   #content > *:first-child { margin-top: 0 !important; }
-  h1, h2, h3, h4, h5, h6 { color: #ffffff; font-weight: 600;
-                           line-height: 1.3; margin: 20px 0 12px; }
-  h1 { font-size: 1.7em; border-bottom: 1px solid #30363d; padding-bottom: 0.3em; }
-  h2 { font-size: 1.4em; border-bottom: 1px solid #2a2f37; padding-bottom: 0.25em; }
+
+  h1, h2, h3, h4, h5, h6 {
+      font-weight: 600;
+      line-height: 1.3;
+      color: #ffffff;
+      margin: 20px 0 12px;
+  }
+  h1 { font-size: 1.7em; padding-bottom: 0.3em; border-bottom: 1px solid #30363d; }
+  h2 { font-size: 1.4em; padding-bottom: 0.25em; border-bottom: 1px solid #2a2f37; }
   h3 { font-size: 1.2em; }
   h4 { font-size: 1.05em; }
   h5, h6 { font-size: 1em; color: #c9d1d9; }
+
   p { margin: 0 0 14px; }
   strong, b { font-weight: 600; color: #ffffff; }
+  em, i { font-style: italic; }
   a { color: #58a6ff; text-decoration: none; }
   a:hover { text-decoration: underline; }
+
   ul, ol { margin: 0 0 14px; padding-left: 26px; }
   li { margin: 5px 0; }
   li > p { margin: 0 0 6px; }
-  code { font-family: "Cascadia Code", Consolas, "Courier New", monospace;
-         font-size: 0.92em; background-color: rgba(110, 118, 129, 0.18);
-         color: #e6edf3; padding: 0.15em 0.4em; border-radius: 5px; }
-  pre { background-color: #0d1117; color: #e6edf3; padding: 14px 16px;
-        border-radius: 8px; white-space: pre-wrap; word-wrap: break-word;
-        overflow-x: auto; tab-size: 4; font-size: 0.9em; line-height: 1.55;
-        border: 1px solid #30363d; margin: 0 0 16px;
-        font-family: "Cascadia Code", Consolas, "Courier New", monospace; }
-  pre code { background-color: transparent; padding: 0; border: none;
-             color: inherit; font-size: inherit; font-family: inherit; }
-  table { border-collapse: collapse; width: 100%; margin: 0 0 16px;
-          font-size: 0.95em; display: block; overflow-x: auto; }
-  th { font-weight: 600; background-color: #161b22; border: 1px solid #30363d;
-       padding: 8px 12px; text-align: left; }
+  ul ul, ul ol, ol ul, ol ol { margin: 6px 0; }
+  li::marker { color: #8b949e; }
+  ul.task-list { list-style: none; padding-left: 6px; }
+  .task-list-item { list-style: none; }
+  .task-list-item input { margin-right: 8px; }
+
+  code {
+      font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+      font-size: 0.92em;
+      background-color: rgba(110, 118, 129, 0.18);
+      color: #e6edf3;
+      padding: 0.15em 0.4em;
+      border-radius: 5px;
+  }
+  pre {
+      background-color: #0d1117;
+      color: #e6edf3;
+      padding: 14px 16px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-x: auto;
+      tab-size: 4;
+      font-size: 0.9em;
+      font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+      line-height: 1.55;
+      border: 1px solid #30363d;
+      margin: 0 0 16px;
+  }
+  pre code {
+      background-color: transparent;
+      padding: 0;
+      border: none;
+      color: inherit;
+      font-size: inherit;
+      font-family: inherit;
+  }
+
+  table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0 0 16px;
+      font-size: 0.95em;
+      display: block;
+      overflow-x: auto;
+  }
+  th {
+      font-weight: 600;
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      padding: 8px 12px;
+      text-align: left;
+  }
   td { border: 1px solid #30363d; padding: 8px 12px; }
   tr:nth-child(2n) { background-color: rgba(110, 118, 129, 0.06); }
-  blockquote { padding: 0.4em 1em; color: #c9d1d9;
-               border-left: 3px solid #3b82f6;
-               background: rgba(56, 139, 253, 0.08);
-               border-radius: 0 6px 6px 0; margin: 0 0 16px; }
+
+  blockquote {
+      padding: 0.4em 1em;
+      color: #c9d1d9;
+      border-left: 3px solid #3b82f6;
+      background: rgba(56, 139, 253, 0.08);
+      border-radius: 0 6px 6px 0;
+      margin: 0 0 16px;
+  }
   blockquote p:last-child { margin-bottom: 0; }
-  hr { height: 1px; padding: 0; margin: 20px 0; background-color: #30363d;
-       border: 0; }
-  .mermaid { background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
-             padding: 14px; margin: 0 0 16px; text-align: center;
-             overflow-x: auto; }
-  .mermaid svg { max-width: 100%; height: auto; }
-  .mermaid pre { text-align: left; }
-  .arithmatex { max-width: 100%; overflow-x: auto; }
+
+  hr { height: 1px; padding: 0; margin: 20px 0; background-color: #30363d; border: 0; }
+
+  .mermaid-box {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 14px;
+      margin: 0 0 16px;
+      text-align: center;
+      overflow-x: auto;
+  }
+  .mermaid-box svg { max-width: 100%; height: auto; }
+  .mermaid-src { background: transparent; border: none; text-align: left; color: #8b949e; margin: 0; }
   .katex { color: #ffffff; font-size: 1.05em; }
-  .katex-display { margin: 1em 0; text-align: center;
-                   overflow-x: auto; overflow-y: hidden; }
+  .katex-display { margin: 1em 0; text-align: center; overflow-x: auto; overflow-y: hidden; }
 </style>
-</head><body><div id="content"></div>
 <script>
 (function () {
-  if (window.mermaid) {
-    try {
-      mermaid.initialize({startOnLoad: false, theme: "dark", securityLevel: "strict"});
-    } catch (e) {}
-  }
   var counter = 0;
   var generation = 0;
-  var mermaidChain = Promise.resolve();
+  var mmCache = {};
+  var mmPending = {};
+  var mmFailed = {};
+  var mmReady = false;
 
-  function decodeSource(base64) {
-    var binary = atob(base64);
-    try {
-      return new TextDecoder("utf-8").decode(
-        Uint8Array.from(binary, function (c) { return c.charCodeAt(0); }));
-    } catch (e) {
-      return binary;
+  function mmHash(s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) {
+      h = ((h << 5) - h) + s.charCodeAt(i);
+      h |= 0;
     }
+    return 'mm' + (h >>> 0);
   }
 
-  function renderMath(root) {
-    if (!window.renderMathInElement) { return; }
+  function forceVertical(src) {
     try {
-      renderMathInElement(root, {
-        delimiters: [
-          {left: "\\\\[", right: "\\\\]", display: true},
-          {left: "\\\\(", right: "\\\\)", display: false}
-        ],
-        ignoredClasses: ["no-math", "mermaid"],
-        throwOnError: false
+      src = src.replace(/^(\\s*)(flowchart|graph)[ \\t]+(LR|RL|BT)\\b/im, '$1$2 TD');
+      src = src.replace(/\\bdirection[ \\t]+(LR|RL|BT)\\b/gi, 'direction TB');
+    } catch (e) {}
+    return src;
+  }
+
+  function ensureMermaid() {
+    if (typeof mermaid === 'undefined') { return false; }
+    if (!mmReady) {
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'dark',
+          securityLevel: 'loose',
+          suppressErrorRendering: true,
+          flowchart: { useMaxWidth: true }
+        });
+        mmReady = true;
+      } catch (e) { return false; }
+    }
+    return true;
+  }
+
+  function cleanupMermaidArtifacts() {
+    try {
+      document.querySelectorAll('body > [id^="__mm_"], body > [id^="d__mm_"], body > .mermaid-error').forEach(function (n) {
+        if (!n.closest || !n.closest('#content')) {
+          if (n.parentNode) { n.parentNode.removeChild(n); }
+        }
       });
     } catch (e) {}
   }
 
-  function renderMermaid(root, gen) {
-    if (!window.mermaid) { return Promise.resolve(); }
-    var nodes = root.querySelectorAll(".mermaid[data-src]");
-    var index = 0;
-    function step() {
-      while (index < nodes.length) {
-        var node = nodes[index++];
-        var source = decodeSource(node.getAttribute("data-src"));
-        node.removeAttribute("data-src");
-        var renderId = "mmd-" + (counter++);
-        return mermaid.render(renderId, source).then(function (result) {
-          if (gen === generation) { node.innerHTML = result.svg; }
-          return step();
-        }).catch(function () {
-          return step();  // keep the <pre> source already inside the node
-        });
+  function processMermaid(root) {
+    if (!ensureMermaid()) { return; }
+    cleanupMermaidArtifacts();
+    root.querySelectorAll('code.language-mermaid').forEach(function (code) {
+      var pre = code.closest('pre') || code;
+      var src = forceVertical(code.textContent || '');
+      var key = mmHash(src);
+      var box = document.createElement('div');
+      box.setAttribute('data-mmkey', key);
+      if (mmCache[key]) {
+        box.className = 'mermaid-box';
+        box.innerHTML = mmCache[key];
+      } else {
+        box.className = mmFailed[key] ? '' : 'mermaid-box';
+        box.innerHTML = '<pre><code class="language-text">' + code.innerHTML + '</code></pre>';
+        if (!mmFailed[key] && !mmPending[key]) {
+          mmPending[key] = true;
+          try {
+            Promise.resolve(mermaid.parse(src, { suppressErrors: true })).then(function (valid) {
+              if (!valid) { mmFailed[key] = true; mmPending[key] = false; return; }
+              return mermaid.render('__mm_' + (counter++), src).then(function (res) {
+                if (res && res.svg) {
+                  mmCache[key] = res.svg;
+                  document.querySelectorAll('[data-mmkey="' + key + '"]').forEach(function (h) {
+                    h.className = 'mermaid-box';
+                    h.innerHTML = res.svg;
+                  });
+                }
+                mmPending[key] = false;
+              });
+            }).catch(function () { mmFailed[key] = true; mmPending[key] = false; });
+          } catch (e) {
+            mmFailed[key] = true;
+            mmPending[key] = false;
+          }
+        }
       }
-      return Promise.resolve();
+      pre.parentNode.replaceChild(box, pre);
+    });
+  }
+
+  function renderMath(root) {
+    if (typeof renderMathInElement !== 'undefined') {
+      try {
+        renderMathInElement(root, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false }
+          ],
+          throwOnError: false
+        });
+      } catch (e) {}
     }
-    return step();
+    processMermaid(root);
+    if (typeof hljs !== 'undefined') {
+      root.querySelectorAll('pre code:not([data-highlighted])').forEach(function (block) {
+        try { hljs.highlightElement(block); } catch (e) {}
+      });
+    }
   }
 
   window.ogSetContent = function (html, streaming) {
     generation += 1;
-    var gen = generation;
-    var el = document.getElementById("content");
+    var el = document.getElementById('content');
+    var wasEmpty = el.innerHTML.trim() === '';
     var atBottom = (window.innerHeight + window.scrollY) >=
                    (document.documentElement.scrollHeight - 12);
     el.innerHTML = html;
     renderMath(el);
-    if (streaming || atBottom) {
+    if (wasEmpty) {
+      window.scrollTo(0, 0);
+    } else if (atBottom) {
       window.scrollTo(0, document.documentElement.scrollHeight);
     }
-    mermaidChain = mermaidChain.then(function () {
-      return renderMermaid(el, gen);
-    }).then(function () {
-      if (gen === generation && (streaming || atBottom)) {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-      }
-    }, function () {});
   };
 
   window.ogClear = function () {
     generation += 1;
-    document.getElementById("content").innerHTML = "";
+    document.getElementById('content').innerHTML = '';
   };
 
   window.ogScrollTop = function () { window.scrollTo(0, 0); };
   window.ogScrollBy = function (pixels) { window.scrollBy(0, pixels); };
 })();
-</script></body></html>"""
+</script>
+</head>
+<body><div id="content"></div></body></html>"""
 
 
 def assets_dir() -> Path:
@@ -203,7 +330,113 @@ def web_view_available() -> bool:
             "katex/katex.min.css",
             "katex/auto-render.min.js",
             "mermaid/mermaid.min.js",
+            "highlight/highlight.min.js",
+            "highlight/github-dark.min.css",
         )
+    )
+
+
+def welcome_fragment(hotkeys: Mapping[str, str] | None = None) -> str:
+    """The startup help panel, in the original three-column table layout.
+
+    Every row, icon size, shortcut cell and the 92% / -10 px wrapper match the
+    original viewer; only the product name differs.
+    """
+    bindings = hotkeys or DEFAULT_HOTKEYS
+
+    def img(name: str, size: int = 20) -> str:
+        return f'<img src="{ui_icons.data_uri(name)}" width="{size}" height="{size}">'
+
+    def key_cell(*actions: str) -> str:
+        keys = [str(bindings.get(action, "")).strip() for action in actions]
+        codes = [
+            f'<code style="font-size: 11px; color: #ffffff;">{_html.escape(key)}</code>'
+            for key in keys
+            if key
+        ]
+        if not codes:
+            return '<td style="padding: 6px;"></td>'
+        return (
+            '<td style="padding: 6px; text-align: right; white-space: nowrap; '
+            'line-height: 1.9;">' + "<br>".join(codes) + "</td>"
+        )
+
+    th = (
+        'style="padding: 6px; font-size: 11px; text-transform: uppercase; '
+        'letter-spacing: 0.04em; color: #ffffff; font-weight: 700; '
+        'background: transparent; border: none; border-bottom: 1px solid #30363d; '
+    )
+    title = "Welcome to OpenGirGit AI Assistant!"
+    rows = [
+        (img("send"), "Ask AI a Question", ("ask",), "padding: 6px;"),
+        (img("erase"), "Clear Input Box", ("erase",), "padding: 6px;"),
+        (
+            '<span style="font-size:15px; font-weight:700;">▲ ▼</span>',
+            "Scroll the Answer Up / Down",
+            ("scroll_up", "scroll_down"),
+            "padding: 6px;",
+        ),
+        (
+            img("analyze_screen"),
+            "Capture &amp; Analyze Screenshot with AI",
+            ("screenshot",),
+            "padding: 6px;",
+        ),
+        (
+            img("hide"),
+            "Collapse Window to Circle (click circle to expand back)",
+            ("collapse",),
+            "padding: 6px;",
+        ),
+        (
+            img("prev") + " " + img("next"),
+            "Navigate Chat History",
+            ("prev", "next"),
+            "padding: 6px;",
+        ),
+        (
+            img("circle", 18) + " " + img("circle_filled", 18),
+            "Adjust Window Transparency (hollow = more transparent, solid = more opaque)",
+            ("opacity_down", "opacity_up"),
+            "padding: 6px;",
+        ),
+        (
+            img("move"),
+            "Move the Window Up<br>Move the Window Left<br>"
+            "Move the Window Down<br>Move the Window Right",
+            ("move_up", "move_left", "move_down", "move_right"),
+            "padding: 6px; line-height: 1.9;",
+        ),
+        (
+            '<span style="font-size:18px; font-weight:700;">◢</span>',
+            "Drag the handle at the bottom-right corner of the answer window to resize it",
+            (),
+            "padding: 6px;",
+        ),
+        (
+            img("system_mic"),
+            "Listening to System Audio (Interviewer's Voice) - starts automatically",
+            (),
+            "padding: 6px;",
+        ),
+    ]
+    body = "".join(
+        f'<tr><td style="padding: 6px; text-align: center;">{icon}</td>'
+        f'<td style="{text_style}">{text}</td>'
+        f"{key_cell(*actions)}</tr>"
+        for icon, text, actions, text_style in rows
+    )
+    return (
+        '<div style="font-size: 92%; transform: translateY(-10px);">'
+        f"<h1>{title}</h1>"
+        "<p>Ask me anything and I'll respond using AI.</p>"
+        "<hr>"
+        "<h2>Features</h2>"
+        '<table style="border-collapse: collapse; width: 100%;"><tbody>'
+        f'<tr><th {th}text-align: center; width: 64px;">Button</th>'
+        f'<th {th}text-align: left;">Purpose</th>'
+        f'<th {th}text-align: right;">Shortcut</th></tr>'
+        f"{body}</tbody></table></div>"
     )
 
 
@@ -353,7 +586,7 @@ def check_render(timeout: float = 40.0) -> int:
 
     fragment = render.answer_to_web_fragment(_CHECK_SAMPLE)
     if fragment is None:
-        print("markdown/pygments are unavailable; cannot build a sample answer")
+        print("markdown is unavailable; cannot build a sample answer")
         return 2
 
     view = RichAnswerWebView()
@@ -365,7 +598,9 @@ def check_render(timeout: float = 40.0) -> int:
             return 3
         view.set_content(fragment, streaming=False)
         katex = _wait_for_js(view, "document.querySelectorAll('.katex').length || 0", timeout)
-        svg = _wait_for_js(view, "document.querySelectorAll('.mermaid svg').length || 0", timeout)
+        svg = _wait_for_js(
+            view, "document.querySelectorAll('.mermaid-box svg').length || 0", timeout
+        )
         print(f"KaTeX nodes: {katex:g}  mermaid SVGs: {svg:g}")
         ok = isinstance(katex, (int, float)) and katex >= 2 and svg == 1
         print("render check:", "OK" if ok else "FAILED")

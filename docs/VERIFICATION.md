@@ -28,8 +28,8 @@ ruff check server client tests packaging
 | `tests/test_client_audio.py` | device hints for missing loopback/microphone inputs |
 | `tests/test_client_hotkeys.py` | hotkey parsing + editor validation (skipped without PySide6) |
 | `tests/test_client_api.py` | SSE assembly, WebSocket transport (auto/forced, cancel, fallback), retry policy, URLs |
-| `tests/test_client_render.py` | markdown→HTML rendering, pygments highlighting, math/mermaid extraction, fallback |
-| `tests/test_client_webview.py` | KaTeX + mermaid rendering in the embedded QtWebEngine (offscreen; skipped without WebEngine) |
+| `tests/test_client_render.py` | markdown→HTML shape (`language-*` code blocks), tables, math/mermaid source, fallback |
+| `tests/test_client_webview.py` | KaTeX + mermaid + highlight.js rendering in the embedded QtWebEngine (offscreen; skipped without WebEngine) |
 | `tests/test_client_ui.py` | headless (offscreen) construction, streaming, capture queue, web-view swap, thumbnails, decoy cursor, dialogs, export |
 | `tests/e2e/run_e2e.py` | boots the real server + mock model and drives the client HTTP layer (SSE + WebSocket) |
 | `tests/e2e/stt_smoke.py` | optional live STT check (file replay or live capture, needs faster-whisper) |
@@ -121,7 +121,7 @@ The CI **windows-tests** job installs the client requirements on
 | DSP chain (down-mix → resample → PCM16) | ✅ unit tests + real audio replay |
 | Local STT (faster-whisper) | ✅ real speech clip transcribed word-perfect via `stt_smoke.py`, both 16 kHz mono and 48 kHz stereo through the capture chain |
 | Live partials (local engine) | ✅ real speech clip, real-time replay: 9 partial updates during an 11 s utterance |
-| Answer rendering (pygments highlighting, tables, fallback) | ✅ unit tests + offscreen render |
+| Answer rendering (highlight.js code, tables, fallback) | ✅ unit tests + offscreen render |
 | Math (KaTeX) + mermaid rendering | ✅ offscreen WebEngine test: formulas become KaTeX nodes, the diagram renders as an SVG, code blocks round-trip untouched; ⏳ appearance inside the capture-excluded overlay on Windows |
 | Math/diagram self-test (`--check-render`) | ✅ from source and inside a PyInstaller one-folder build; the release workflow runs it on the Windows exe (non-fatal step) |
 | Screenshot thumbnails | ✅ offscreen UI tests |

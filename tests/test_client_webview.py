@@ -86,12 +86,21 @@ def test_bundled_assets_present():
     assert (assets / "katex" / "katex.min.js").is_file()
     assert (assets / "katex" / "auto-render.min.js").is_file()
     assert (assets / "mermaid" / "mermaid.min.js").is_file()
+    assert (assets / "highlight" / "highlight.min.js").is_file()
     assert webview.web_view_available()
+
+
+def test_welcome_fragment_is_the_branded_feature_table():
+    fragment = webview.welcome_fragment()
+    assert "Welcome to OpenGirGit AI Assistant!" in fragment
+    assert "<table" in fragment and "Features" in fragment
+    assert "Shortcut" in fragment and "Shift+Alt+A" in fragment
+    assert fragment.count("data:image/svg+xml;base64,") >= 9
 
 
 def test_math_and_mermaid_render_offscreen(qt_app, web_widget):
     fragment = render.answer_to_web_fragment(MATH_AND_MERMAID)
-    assert fragment is not None and "arithmatex" in fragment
+    assert fragment is not None and "$a^2 + b^2$" in fragment
 
     web_widget.set_content(fragment, streaming=False)
     katex = _probe(
@@ -105,7 +114,7 @@ def test_math_and_mermaid_render_offscreen(qt_app, web_widget):
     svg = _probe(
         qt_app,
         web_widget,
-        "document.querySelectorAll('.mermaid svg').length || 0",
+        "document.querySelectorAll('.mermaid-box svg').length || 0",
     )
     assert svg == 1  # mermaid drew the diagram
 

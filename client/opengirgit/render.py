@@ -1,28 +1,18 @@
-"""Markdown → rich HTML for the answer panel (syntax-highlighted code).
+"""Markdown → the answer HTML shared by the original web answer view.
 
-The answer panel is a ``QTextBrowser``, which understands a subset of HTML.
-Plain ``setMarkdown`` renders code blocks as unstyled monospace text; this
-module converts the answer to HTML first so fenced code blocks are
-syntax-highlighted with Pygments (inline styles, so Qt needs no external CSS
-for them) and tables render properly.
+The visible answer panel uses QtWebEngine.  This module converts the model's
+Markdown to the same HTML shape the original viewer produced: fenced code
+blocks keep their ``language-*`` class for highlight.js, tables stay tables,
+and math/mermaid source is left for the bundled KaTeX/mermaid scripts to
+render.  No network access is used.
 
-Math (``$…$``, ``$$…$$``, ``\\(…\\)``, ``\\[…\\]``) and mermaid fenced blocks
-cannot be drawn by ``QTextBrowser``; ``answer_to_web_fragment`` produces the
-same markdown as an HTML fragment for the optional QtWebEngine answer view
-(:mod:`opengirgit.webview`), leaving KaTeX delimiters and
-``div.mermaid`` nodes for the bundled JavaScript to render.
-
-Both ``markdown`` and ``pygments`` are soft dependencies: if either is missing
-the caller falls back to ``QTextBrowser.setMarkdown``.
+The ``QTextBrowser`` path remains only as a fallback for installations without
+QtWebEngine; it still gets a dark stylesheet and HTML, but cannot run scripts.
 """
 
 from __future__ import annotations
 
-import base64
-import html as _html
-import itertools
 import re
-import uuid
 from typing import Any
 
 try:  # pragma: no cover - trivial import guard
@@ -33,17 +23,8 @@ except Exception:  # noqa: BLE001 - any import failure means no rich rendering
     _markdown = None  # type: ignore[assignment]
     _HAVE_MARKDOWN = False
 
-try:  # pragma: no cover - trivial import guard
-    from pygments.formatters import HtmlFormatter as _HtmlFormatter
 
-    _HAVE_PYGMENTS = True
-except Exception:  # noqa: BLE001
-    _HtmlFormatter = None  # type: ignore[assignment]
-    _HAVE_PYGMENTS = False
-
-PYGMENTS_STYLE = "monokai"
-
-#: Extra CSS applied to the answer document (dark theme, matches the overlay).
+#: Extra CSS applied to the fallback answer document (dark theme).
 _DARK_CSS = """
 body { color: #ececf1; background-color: transparent; }
 h1, h2, h3, h4 { color: #ffffff; }
@@ -73,12 +54,93 @@ th, td { border: 1px solid #b8b8b8; padding: 3px 7px; }
 hr { color: #bbbbbb; }
 """
 
-_EXTENSIONS = ["fenced_code", "codehilite", "tables", "sane_lists"]
+_EXTENSIONS = ["fenced_code", "tables", "sane_lists"]
+_RICH_EXTENSIONS = [
+    *_EXTENSIONS,
+    "attr_list",
+    "pymdownx.betterem",
+    "pymdownx.tasklist",
+]
+_EXTENSION_CONFIGS = {"pymdownx.tasklist": {"custom_checkbox": True}}
+_MD_EXTENSIONS: list[str] | None = None
+_MD_EXTENSION_CONFIGS: dict[str, dict[str, Any]] | None = None
+
+
+def _resolve_md_extensions() -> tuple[list[str], dict[str, dict[str, Any]]]:
+    """Use the same rich Markdown set as the original, with a basic fallback."""
+    global _MD_EXTENSIONS, _MD_EXTENSION_CONFIGS
+    if _MD_EXTENSIONS is not None:
+        return _MD_EXTENSIONS, _MD_EXTENSION_CONFIGS or {}
+    if _markdown is not None:
+        try:
+            _markdown.markdown(
+                "probe",
+                extensions=_RICH_EXTENSIONS,
+                extension_configs=_EXTENSION_CONFIGS,
+            )
+        except Exception:  # noqa: BLE001 - pymdownx is optional
+            _MD_EXTENSIONS = list(_EXTENSIONS)
+            _MD_EXTENSION_CONFIGS = {}
+        else:
+            _MD_EXTENSIONS = list(_RICH_EXTENSIONS)
+            _MD_EXTENSION_CONFIGS = _EXTENSION_CONFIGS
+    else:
+        _MD_EXTENSIONS = list(_EXTENSIONS)
+        _MD_EXTENSION_CONFIGS = {}
+    return _MD_EXTENSIONS, _MD_EXTENSION_CONFIGS
 
 
 def rich_available() -> bool:
-    """True when markdown+pygments are importable."""
-    return _HAVE_MARKDOWN and _HAVE_PYGMENTS
+    """True when Markdown is importable."""
+    return _HAVE_MARKDOWN
+
+
+def _preprocess_latex(text: str) -> str:
+    """Turn the LaTeX delimiters models commonly use into KaTeX delimiters."""
+    text = re.sub(r"\\\[\s*(.*?)\s*\\\]", r"$$\1$$", text, flags=re.DOTALL)
+    text = re.sub(
+        r"^\[\s*\n(.*?)\n\s*\]$",
+        r"$$\1$$",
+        text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    text = re.sub(
+        r"^\[\s*([^\[\]]*\\[a-zA-Z]+[^\[\]]*)\s*\]$",
+        r"$$\1$$",
+        text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    text = re.sub(r"\\\(\s*(.*?)\s*\\\)", r"$\1$", text, flags=re.DOTALL)
+    return text
+
+
+_LIST_INDENT_RE = re.compile(r"^(\s*)([-*+]|\d+[.)])(\s+)(.*)$")
+_FENCE_RE = re.compile(r"^(```|~~~)")
+
+
+def _normalize_list_indentation(text: str) -> str:
+    """Snap nested list indentation to the four-space steps Markdown expects."""
+    lines = text.split("\n")
+    out: list[str] = []
+    in_fence = False
+    for line in lines:
+        stripped = line.lstrip()
+        if _FENCE_RE.match(stripped):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+        match = _LIST_INDENT_RE.match(line)
+        if match:
+            spaces = len(match.group(1))
+            if spaces:
+                spaces = max(4, ((spaces + 3) // 4) * 4)
+            out.append(" " * spaces + line[len(match.group(1)) :])
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def answer_css(variant: str = "dark") -> str:
@@ -91,20 +153,16 @@ def answer_css(variant: str = "dark") -> str:
 
 
 def answer_to_html(text: str) -> str | None:
-    """Convert markdown to HTML with highlighted code, or None if unavailable."""
+    """Convert markdown to HTML (code carries ``language-*`` classes)."""
     if not text or not rich_available():
         return None
     try:
+        extensions, configs = _resolve_md_extensions()
+        prepared = _normalize_list_indentation(_preprocess_latex(text))
         return _markdown.markdown(
-            text,
-            extensions=_EXTENSIONS,
-            extension_configs={
-                "codehilite": {
-                    "noclasses": True,  # inline styles: Qt does not load CSS classes
-                    "guess_lang": True,
-                    "pygments_style": PYGMENTS_STYLE,
-                }
-            },
+            prepared,
+            extensions=extensions,
+            extension_configs=configs,
         )
     except Exception:  # noqa: BLE001 - never let rendering break streaming
         return None
@@ -114,8 +172,8 @@ def render_into(view: Any, markdown_text: str, *, variant: str = "dark") -> bool
     """Render ``markdown_text`` into a ``QTextBrowser``-like ``view``.
 
     ``variant`` selects the colour scheme (see :func:`answer_css`). Returns True
-    when the rich (highlighted) path was used, False when the plain
-    ``setMarkdown`` fallback was taken.
+    when the HTML path was used, False when the plain ``setMarkdown`` fallback
+    was taken.
     """
     try:
         view.document().setDefaultStyleSheet(answer_css(variant))
@@ -134,13 +192,11 @@ def render_into(view: Any, markdown_text: str, *, variant: str = "dark") -> bool
 # --------------------------------------------------------------------------- #
 
 _CODE_FENCE_RE = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<fence>`{3,})[ \t]*(?P<info>[^\n`]*?)[ \t]*\r?\n"
+    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})[ \t]*(?P<info>[^\n`]*?)[ \t]*\r?\n"
     r"(?P<body>.*?)"
     r"^(?P=indent)(?P=fence)[ \t]*$",
     re.M | re.S,
 )
-_INLINE_CODE_RE = re.compile(r"(?P<ticks>`+)(?P<body>[^\n]*?)(?P=ticks)")
-_DISPLAY_MATH_RE = re.compile(r"\\\[(?P<paren>.+?)\\\]|\$\$(?P<dollar>.+?)\$\$", re.S)
 _INLINE_MATH_RE = re.compile(
     r"\\\((?P<paren>.+?)\\\)"
     r"|(?<![\\$])\$(?![ \t$])(?P<dollar>(?:\\.|[^$\\\n])+?)(?<![\\ \t])\$(?!\d)"
@@ -163,87 +219,26 @@ def needs_web_view(text: str) -> bool:
     return _INLINE_MATH_RE.search(text) is not None
 
 
-def _mermaid_div(source: str) -> str:
-    """A mermaid node the web view turns into an SVG (source kept as fallback)."""
-    source = source.strip("\n")
-    encoded = base64.b64encode(source.encode("utf-8")).decode("ascii")
-    return (
-        f'<div class="mermaid" data-src="{encoded}">'
-        f'<pre class="mermaid-source">{_html.escape(source)}</pre>'
-        f"</div>"
-    )
-
-
 def answer_to_web_fragment(text: str) -> str | None:
-    """Markdown → HTML fragment with KaTeX/mermaid nodes, or None if unavailable.
+    """Markdown → the same HTML fragment the original web view receives.
 
-    Code (fenced blocks and inline spans) is protected first so ``$`` or
-    backslash-parens inside code are never mistaken for math; the protected
-    text is put back before markdown runs, so highlighting is unchanged.
+    Math (``$…$``/``$$…$$``) and mermaid fences are intentionally left in the
+    HTML: the bundled KaTeX and mermaid scripts recognize the same syntax after
+    the fragment is inserted, exactly as the original viewer did.  Code blocks
+    keep their ``language-*`` class so highlight.js can colour them.
     """
-    if not text or not rich_available():
-        return None
+    return answer_to_html(text)
 
-    nonce = uuid.uuid4().hex[:10]
-    counter = itertools.count()
-    blocks: dict[str, str] = {}  # token → block-level HTML (math display, mermaid)
-    inlines: dict[str, str] = {}  # token → inline HTML (math)
-    protected: dict[str, str] = {}  # token → original code text (restored pre-markdown)
 
-    def token() -> str:
-        return f"OG{nonce}T{next(counter)}X"
-
-    def protect_fence(match: re.Match[str]) -> str:
+def has_switchable_code(text: str) -> bool:
+    """True when an answer has a fenced code block other than mermaid."""
+    if not text:
+        return False
+    for match in _CODE_FENCE_RE.finditer(text):
         info = (match.group("info") or "").strip().lower()
-        if info.split(" ", 1)[0] == "mermaid":
-            tok = token()
-            blocks[tok] = _mermaid_div(match.group("body"))
-            return f"\n\n{tok}\n\n"
-        tok = token()
-        protected[tok] = match.group(0)
-        return tok
-
-    def protect_inline_code(match: re.Match[str]) -> str:
-        tok = token()
-        protected[tok] = match.group(0)
-        return tok
-
-    def display_math(match: re.Match[str]) -> str:
-        latex = match.group("paren") or match.group("dollar") or ""
-        tok = token()
-        blocks[tok] = (
-            f'<div class="arithmatex">\\[{_html.escape(latex.strip(), quote=False)}\\]</div>'
-        )
-        return f"\n\n{tok}\n\n"
-
-    def inline_math(match: re.Match[str]) -> str:
-        latex = match.group("paren") or match.group("dollar") or ""
-        tok = token()
-        inlines[tok] = (
-            f'<span class="arithmatex">\\({_html.escape(latex.strip(), quote=False)}\\)</span>'
-        )
-        return tok
-
-    stripped = _CODE_FENCE_RE.sub(protect_fence, text)
-    stripped = _INLINE_CODE_RE.sub(protect_inline_code, stripped)
-    stripped = _DISPLAY_MATH_RE.sub(display_math, stripped)
-    stripped = _INLINE_MATH_RE.sub(inline_math, stripped)
-    for tok, original in protected.items():
-        stripped = stripped.replace(tok, original)
-
-    fragment = answer_to_html(stripped)
-    if fragment is None:
-        return None
-    for tok, replacement in blocks.items():
-        fragment = re.sub(
-            r"<p>\s*" + re.escape(tok) + r"\s*</p>",
-            lambda _match, html=replacement: html,
-            fragment,
-        )
-        fragment = fragment.replace(tok, replacement)
-    for tok, replacement in inlines.items():
-        fragment = fragment.replace(tok, replacement)
-    return fragment
+        if info.split(" ", 1)[0] != "mermaid":
+            return True
+    return False
 
 
 def render_into_web(view: Any, markdown_text: str, *, streaming: bool = False) -> bool:

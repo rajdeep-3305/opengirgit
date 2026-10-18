@@ -1,4 +1,4 @@
-"""Answer rendering: markdown → HTML with syntax-highlighted code (offline)."""
+"""Answer rendering: the same Markdown HTML shape as the original web view."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from opengirgit import render  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
-    not render.rich_available(), reason="markdown/pygments not installed"
+    not render.rich_available(), reason="markdown not installed"
 )
 
 SAMPLE = """\
@@ -44,11 +44,12 @@ graph TD
 """
 
 
-def test_code_blocks_are_highlighted():
+def test_code_blocks_keep_the_original_language_class():
     html = render.answer_to_html(SAMPLE)
     assert html is not None
-    assert "codehilite" in html
-    assert 'style="color:' in html  # pygments inline styles
+    assert '<pre><code class="language-python">' in html
+    assert "codehilite" not in html
+    assert "def add(a, b):" in html
 
 
 def test_tables_and_lists_render():
@@ -63,9 +64,7 @@ def test_streaming_partial_fence_does_not_raise():
     assert render.answer_to_html(partial) is not None  # unclosed fence is fine
 
 
-def test_fallback_when_libraries_missing(monkeypatch):
-    monkeypatch.setattr(render, "_HAVE_PYGMENTS", False)
-    assert render.answer_to_html(SAMPLE) is None
+def test_fallback_when_markdown_missing(monkeypatch):
     monkeypatch.setattr(render, "_HAVE_MARKDOWN", False)
     assert render.answer_to_html(SAMPLE) is None
 
@@ -94,7 +93,7 @@ class _ViewStub:
 def test_render_into_prefers_html():
     view = _ViewStub()
     assert render.render_into(view, SAMPLE) is True
-    assert view.html is not None and "codehilite" in view.html
+    assert view.html is not None and 'class="language-python"' in view.html
     assert view.markdown is None
     assert view.stylesheet is not None
 
@@ -110,6 +109,20 @@ def test_render_into_falls_back(monkeypatch):
 # --------------------------------------------------------------- math/mermaid #
 
 
+def test_latex_delimiters_are_normalized_for_katex():
+    html = render.answer_to_html(r"Use \[x^2\] and \(a+b\).")
+    assert html is not None
+    assert "$$x^2$$" in html
+    assert "$a+b$" in html
+
+
+def test_nested_list_indentation_is_normalized():
+    html = render.answer_to_html("- top\n  - nested\n")
+    assert html is not None
+    assert "nested" in html
+    assert "<ul>" in html
+
+
 def test_needs_web_view_detection():
     assert render.needs_web_view("solve $x^2$ for x")
     assert render.needs_web_view("$$\nx\n$$")
@@ -122,21 +135,30 @@ def test_needs_web_view_detection():
     assert not render.needs_web_view("It costs $5 and $10 in total.")
 
 
-def test_web_fragment_has_katex_and_mermaid_nodes():
+def test_web_fragment_leaves_math_and_mermaid_for_the_scripts():
     fragment = render.answer_to_web_fragment(MATH_ANSWER)
     assert fragment is not None
-    assert fragment.count('class="arithmatex"') == 2  # one inline + one display
-    assert r"\(" in fragment and r"\[" in fragment
-    assert '<div class="mermaid" data-src="' in fragment
-    assert "codehilite" in fragment  # code blocks are still highlighted
+    assert "$E = mc^2$" in fragment
+    assert "$$" in fragment
+    assert '<code class="language-mermaid">' in fragment
+    assert '<code class="language-bash">' in fragment
+    assert "codehilite" not in fragment
 
 
-def test_web_fragment_leaves_code_alone():
+def test_web_fragment_leaves_dollar_signs_in_code_alone():
     fragment = render.answer_to_web_fragment(MATH_ANSWER)
     assert fragment is not None
     text = re.sub(r"<[^>]+>", "", fragment)
-    assert 'echo "$HOME $(date)"' in text  # shell dollars were not treated as math
-    assert "$E = mc^2$" not in fragment  # the inline math source was converted
+    text = text.replace("&quot;", '"')
+    assert 'echo "$HOME $(date)"' in text
+    assert "$E = mc^2$" in fragment
+
+
+def test_switchable_code_detection():
+    assert render.has_switchable_code("```python\nprint(1)\n```")
+    assert not render.has_switchable_code("```mermaid\ngraph TD\n```")
+    assert not render.has_switchable_code("inline `code` only")
+    assert not render.has_switchable_code("")
 
 
 def test_web_fragment_none_without_libraries(monkeypatch):
@@ -159,12 +181,12 @@ class _WebViewStub:
 def test_render_into_web_records_content():
     view = _WebViewStub()
     assert render.render_into_web(view, MATH_ANSWER, streaming=True) is True
-    assert view.content is not None and "arithmatex" in view.content
+    assert view.content is not None and "$E = mc^2$" in view.content
     assert view.streaming is True
 
 
 def test_render_into_web_falls_back(monkeypatch):
-    monkeypatch.setattr(render, "_HAVE_PYGMENTS", False)
+    monkeypatch.setattr(render, "_HAVE_MARKDOWN", False)
     view = _WebViewStub()
     assert render.render_into_web(view, MATH_ANSWER) is False
     assert view.content is None

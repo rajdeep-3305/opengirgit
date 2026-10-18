@@ -7,10 +7,12 @@ certifi
 numpy>=1.26
 python-dotenv>=1.0,<2
 
-# Answer rendering: markdown → HTML with syntax-highlighted code blocks.
-# Both are soft dependencies; without them answers fall back to plain markdown.
+# Answer rendering: markdown → HTML; highlight.js ships in the bundled assets.
+# Markdown is a soft dependency; without it answers fall back to plain text.
 markdown>=3.5,<4
-Pygments>=2.17,<3
+# Optional rich Markdown extensions used by the original viewer: better
+# emphasis and task-list checkboxes. Falls back to the basic set if absent.
+pymdown-extensions>=10,<11
 
 # Microphone capture (all platforms)
 sounddevice>=0.4.6

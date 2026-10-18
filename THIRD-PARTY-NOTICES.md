@@ -18,9 +18,11 @@ application are included anywhere in this repository or its release artifacts.
 | [httpx](https://www.python-httpx.org/) | `BSD-3-Clause` | HTTP/SSE transport. |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | `BSD-3-Clause` | Reads optional `.env` files. |
 | [Markdown](https://python-markdown.github.io/) | `BSD-3-Clause` | Answer rendering. |
-| [Pygments](https://pygments.org/) | `BSD-2-Clause` | Code-block highlighting. |
+| [Pymdown Extensions](https://facelessuser.github.io/pymdown-extensions/) | `MIT` | Optional rich Markdown extensions (`betterem`, `tasklist`) used for the original answer styling. |
 | [KaTeX](https://katex.org/) | `MIT` | Vendored offline under `client/opengirgit/assets/katex` (its `LICENSE` ships alongside). |
 | [mermaid](https://mermaid.js.org/) | `MIT` | Vendored offline under `client/opengirgit/assets/mermaid` (its `LICENSE` ships alongside). |
+| [highlight.js](https://highlightjs.org/) | `BSD-3-Clause` | Code-block highlighting; vendored under `client/opengirgit/assets/highlight` (its `LICENSE` ships alongside). |
+| [Google Material Symbols](https://fonts.google.com/icons) | `Apache-2.0` | Toolbar SVGs under `client/opengirgit/assets/icons` (the Apache license ships alongside). |
 | [sounddevice](https://python-sounddevice.readthedocs.io/) | `MIT` | Microphone capture; bundles PortAudio (`MIT`). |
 | [PyAudioWPatch](https://github.com/s0d3s/PyAudioWPatch) | `MIT` | Windows system-audio (WASAPI loopback) capture; bundles PortAudio (`MIT`). Windows builds only. |
 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | `MIT` | Local speech-to-text engine. |

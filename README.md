@@ -226,5 +226,6 @@ assets or binaries from it and is not affiliated with or endorsed by its
 authors.
 
 Release bundles redistribute third-party components (Qt/PySide6 under LGPL-3.0,
-vendored KaTeX/mermaid under MIT, …) — each under its own license, listed in
+vendored KaTeX/mermaid under MIT, highlight.js under BSD-3-Clause, Material
+Symbols under Apache-2.0, …) — each under its own license, listed in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
