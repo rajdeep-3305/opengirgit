@@ -64,11 +64,11 @@ knows how to stay out of a screen share.
 
 <p align="center">
   <a href="docs/media/opengirgit-demo.mp4">
-    <img src="docs/media/opengirgit-demo-poster.jpg" alt="OpenGirGit demo — answers stream in, word by word" width="760">
+    <img src="docs/media/opengirgit-demo.webp" alt="OpenGirGit demo — answers stream in, word by word" width="760">
   </a>
 </p>
 
-<p align="center"><sub>▶ 22-second demo · <a href="docs/media/opengirgit-demo.mp4">watch the MP4</a> · music: <a href="https://ende.app">Sascha Ende (ende.app)</a>, CC BY 4.0</sub></p>
+<p align="center"><sub>▶ 22-second silent demo (loops automatically) · <a href="docs/media/opengirgit-demo.mp4">watch the MP4</a></sub></p>
 
 ## Features
 

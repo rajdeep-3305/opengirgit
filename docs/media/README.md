@@ -3,18 +3,20 @@
 | File | Use |
 |---|---|
 | `opengirgit-lockup.png` | the OpenGirGit lockup — script *open* + chameleon, transparent PNG that works on light and dark backgrounds |
-| `opengirgit-demo.mp4` | the 22-second launch cut — 1920×1080, 30 fps, H.264/AAC, ~3.9 MB |
-| `opengirgit-demo-poster.jpg` | poster frame for the README embed (still at 12.8 s) |
+| `opengirgit-demo.webp` | silent animated preview for the README — 900×506, 15 fps, loops in place (`<img>`, so GitHub renders it inline) |
+| `opengirgit-demo.mp4` | the 22-second silent cut — 1920×1080, 30 fps, H.264, ~3.4 MB |
+| `opengirgit-demo-poster.jpg` | static poster frame (still at 12.8 s) for external posts/social cards |
 
 The app icon lives in [`packaging/org.opengirgit.OpenGirGit.svg`](../packaging/org.opengirgit.OpenGirGit.svg)
 (the **OG** monogram — the source for the Windows `.ico`; see
 [`packaging/README.md`](../packaging/README.md#icon)).
 
-## Music credit
+## Audio
 
-The demo uses **“Happy Beats / Business Moves vol-12” by
-[Sascha Ende](https://ende.app), licensed CC BY 4.0**. The credit must stay
-wherever the video ships.
+The files in this folder are **silent** — the README preview autoplays without
+sound. The archived 50 MB delivery master with the original music stays outside
+the repo; wherever that version is published, credit **“Happy Beats / Business
+Moves vol-12” by [Sascha Ende](https://ende.app), CC BY 4.0**.
 
-The 50 MB delivery master (19 Mbps) is kept outside the repo; the MP4 here is a
-lighter CRF-22 encode of the same cut for GitHub.
+The silent MP4 here is a lighter CRF-22 encode of the same cut for GitHub; the
+WebP is a 900 px/15 fps preview of it.
