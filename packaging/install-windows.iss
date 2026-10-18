@@ -11,7 +11,7 @@
 
 #define AppName "OpenGirGit"
 ; Keep in sync with client/opengirgit/version.py and server/app/config.py.
-#define AppVersion "0.2.0"
+#define AppVersion "0.2.1"
 #define AppPublisher "OpenGirGit contributors"
 #define AppURL "https://github.com/rajdeep-3305/opengirgit"
 
