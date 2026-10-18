@@ -97,7 +97,7 @@ def test_overlay_constructs_and_streams_answer(qt_app, tmp_path, monkeypatch):
     monkeypatch.setattr(conversations, "_flush", lambda: None)
 
     overlay = OverlayWindow(stub, _settings(tmp_path), conversations, lambda: "ctx")
-    assert overlay.windowTitle().startswith("OpenGirGit")
+    assert overlay.windowTitle() == ""
 
     overlay.submit_question("Explain goroutines")
     worker = overlay._worker  # noqa: SLF001 - test needs to await the thread
@@ -127,6 +127,30 @@ def test_overlay_constructs_and_streams_answer(qt_app, tmp_path, monkeypatch):
     worker.wait(5000)
     qt_app.processEvents()
     assert overlay._answer_buffer == "Screenshot answer"  # noqa: SLF001
+    overlay.close()
+
+
+def test_language_selector_appears_only_for_code_answers(qt_app, tmp_path):
+    overlay = OverlayWindow(
+        _StubApi(), _settings(tmp_path), ConversationStore(), lambda: ""
+    )
+    overlay.show()
+    qt_app.processEvents()
+
+    overlay._render_answer("```python\nprint(1)\n```", force=True)  # noqa: SLF001
+    qt_app.processEvents()
+    assert overlay._language_selector.isVisible()  # noqa: SLF001
+    assert overlay._manual_input.x() > 169  # noqa: SLF001
+    assert [button.text() for button in overlay._language_buttons.values()] == [  # noqa: SLF001
+        "Py",
+        "C++",
+        "Java",
+        "JS",
+    ]
+
+    overlay._render_answer("plain answer", force=True)  # noqa: SLF001
+    qt_app.processEvents()
+    assert overlay._language_selector.isVisible() is False  # noqa: SLF001
     overlay.close()
 
 
@@ -535,7 +559,7 @@ def test_ask_hotkey_sends_only_screenshots(qt_app, tmp_path):
     overlay.close()
 
 
-def test_overlay_switches_to_web_view_for_math(qt_app, tmp_path):
+def test_overlay_renders_all_answers_in_the_web_view(qt_app, tmp_path):
     webview = pytest.importorskip("opengirgit.webview")
     if not webview.web_view_available():
         pytest.skip("vendored KaTeX/mermaid assets missing")
@@ -568,8 +592,8 @@ def test_overlay_switches_to_web_view_for_math(qt_app, tmp_path):
     assert overlay._web_view is not None  # noqa: SLF001
 
     overlay._render_answer("plain text answer", force=True)  # noqa: SLF001
-    assert overlay._web_visible is False  # noqa: SLF001
-    assert "plain text answer" in overlay._answer_view.toPlainText()  # noqa: SLF001
+    assert overlay._web_visible is True  # noqa: SLF001
+    assert overlay._answer_view.isVisible() is False  # noqa: SLF001
     overlay.close()
 
 

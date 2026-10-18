@@ -68,6 +68,14 @@ def test_settings_round_trip_and_clamping():
     assert not hasattr(settings, "unknown")
 
 
+def test_old_default_opacity_is_migrated_once():
+    migrated = AppSettings.from_dict({"opacity": 0.96})
+    assert migrated.opacity == 0.95
+
+    explicit = AppSettings.from_dict({"opacity": 0.96, "config_version": 2})
+    assert explicit.opacity == 0.96
+
+
 def test_silence_seconds_default_and_clamping():
     assert AppSettings().silence_seconds == 0.9
     assert AppSettings.from_dict({"silence_seconds": 0.01}).silence_seconds == 0.2

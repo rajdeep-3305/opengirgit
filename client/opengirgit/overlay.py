@@ -18,12 +18,21 @@ from PySide6.QtCore import (
     QEvent,
     QPoint,
     QPropertyAnimation,
+    QRectF,
     QSize,
     Qt,
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QRegion
+from PySide6.QtGui import (
+    QColor,
+    QFontMetrics,
+    QGuiApplication,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QRegion,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -32,6 +41,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -83,7 +93,14 @@ CODE_LANGUAGES = [
     "SQL",
 ]
 
-_FONT = "'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif"
+_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+
+
+def _rounded_region(width: int, height: int, radius: float) -> QRegion:
+    """A rounded-rectangle mask matching the painted frame."""
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(0, 0, width, height), radius, radius)
+    return QRegion(path.toFillPolygon().toPolygon())
 
 _STYLE_SHEET = f"""
 QWidget {{
@@ -113,9 +130,20 @@ QPushButton#barButton:hover {{
 QPushButton#barButton:pressed {{
     background-color: #2a2a2a;
 }}
-QPushButton#barButton[active="true"] {{
-    background-color: #1f5f3f;
-    border-color: #46c07e;
+QPushButton#micButton {{
+    background-color: #3a3a3a;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 0px;
+}}
+QPushButton#micButton[active="true"] {{
+    background-color: #006400;
+    border: 1px solid #44FF44;
+}}
+QPushButton#micButton[connecting="true"] {{
+    background-color: #8B6914;
+    border: 1px solid #FFB347;
 }}
 QPushButton#tinyButton {{
     background-color: transparent;
@@ -233,7 +261,29 @@ QPushButton#historyButton:pressed {{
     background-color: #2a2a2a;
 }}
 QPushButton#historyButton:disabled {{
-    color: #777777;
+    opacity: 0.3;
+}}
+QFrame#languageSelector {{
+    background-color: #3a3a3a;
+    border: none;
+    border-radius: 6px;
+}}
+QPushButton#langButton {{
+    background-color: transparent;
+    color: #ffffff;
+    border: 1px solid #7a7a7a;
+    border-radius: 4px;
+    padding: 0px 6px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#langButton:hover {{
+    background-color: #4a4a4a;
+}}
+QPushButton#langButton[active="true"] {{
+    background-color: #4a4a4a;
+    border: 1px solid #58a6ff;
+    font-weight: 700;
 }}
 QLabel#historyLabel {{
     color: #ffffff;
@@ -333,6 +383,46 @@ def _scaled_thumb(pixmap, height: int = THUMBNAIL_HEIGHT):
     return scaled
 
 
+class _DeviceComboBox(QComboBox):
+    """The original 130–160 px device selector.
+
+    QComboBox's default size hint counts the popup view, which makes the
+    control stretch to the maximum.  The original selector instead starts at
+    130 px and only widens for a long current device name.
+    """
+
+    MIN_WIDTH = 130
+    MAX_WIDTH = 160
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._desired_width = self.MIN_WIDTH
+        self._arrow: QLabel | None = None
+
+    def set_arrow(self, arrow: QLabel) -> None:
+        self._arrow = arrow
+        self._move_arrow()
+
+    def _move_arrow(self) -> None:
+        if self._arrow is not None:
+            self._arrow.move(self.width() - 14, 0)
+            self._arrow.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: D102
+        super().resizeEvent(event)
+        self._move_arrow()
+
+    def set_desired_width(self, width: int) -> None:
+        self._desired_width = max(self.MIN_WIDTH, min(self.MAX_WIDTH, int(width)))
+        self.updateGeometry()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self._desired_width, 28)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self.MIN_WIDTH, 28)
+
+
 class _PendingThumb(QWidget):
     """One queued screenshot with a small remove button."""
 
@@ -424,7 +514,6 @@ class ResponseWindow(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool,
         )
-        self.setWindowTitle("OpenGirGit — answer")
         self.setObjectName("responseWindow")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -455,8 +544,12 @@ class ResponseWindow(QWidget):
         painter.drawRoundedRect(rect, BORDER_RADIUS, BORDER_RADIUS)
         painter.end()
 
+    def _apply_mask(self) -> None:
+        self.setMask(_rounded_region(self.width(), self.height(), BORDER_RADIUS))
+
     def showEvent(self, event) -> None:  # noqa: D102
         super().showEvent(event)
+        self._apply_mask()
         stealth.apply_stealth(self)
         self.position_grip()
         self._grip.show()
@@ -476,6 +569,7 @@ class ResponseWindow(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: D102
         super().resizeEvent(event)
+        self._apply_mask()
         self.position_grip()
 
     def position_grip(self) -> None:
@@ -534,7 +628,6 @@ class OverlayWindow(QWidget):
     ) -> None:
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
         super().__init__(parent, flags)
-        self.setWindowTitle("OpenGirGit")
         self.setObjectName("barRoot")
         self.setStyleSheet(_STYLE_SHEET)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -601,6 +694,7 @@ class OverlayWindow(QWidget):
         self._build_ui()
         self._refresh_devices()
         self._center_on_screen()
+        self._apply_bar_mask()
 
     # ------------------------------------------------------------------ UI #
 
@@ -632,7 +726,7 @@ class OverlayWindow(QWidget):
         top.addSpacing(14)
 
         self._mic_button = QPushButton(self._top_row)
-        self._mic_button.setObjectName("barButton")
+        self._mic_button.setObjectName("micButton")
         self._mic_button.setFixedSize(36, 30)
         self._mic_button.setIcon(ui_icons.icon("system_mic", 20))
         self._mic_button.setIconSize(QSize(20, 20))
@@ -641,15 +735,21 @@ class OverlayWindow(QWidget):
         top.addWidget(self._mic_button)
         top.addSpacing(4)
 
-        self._device_combo = QComboBox(self._top_row)
+        self._device_combo = _DeviceComboBox(self._top_row)
         self._device_combo.setObjectName("deviceCombo")
-        self._device_combo.setFixedSize(130, 28)
+        self._device_combo.setMinimumWidth(130)
+        self._device_combo.setMaximumWidth(160)
+        self._device_combo.setFixedHeight(28)
+        self._device_combo.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self._device_combo.currentIndexChanged.connect(self._on_device_changed)
         self._device_arrow = QLabel("\u25bc", self._device_combo)
         self._device_arrow.setObjectName("comboArrow")
         self._device_arrow.setGeometry(116, 0, 12, 28)
         self._device_arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._device_arrow.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._device_combo.set_arrow(self._device_arrow)
         top.addWidget(self._device_combo)
 
         top.addStretch(1)
@@ -762,7 +862,7 @@ class OverlayWindow(QWidget):
         self._resume_button.setFixedSize(34, 26)
         self._resume_button.setIcon(ui_icons.icon("pencil", 20))
         self._resume_button.setIconSize(QSize(20, 20))
-        self._resume_button.clicked.connect(self.info_requested.emit)
+        self._resume_button.clicked.connect(self._stt_input.clear)
         speech.addWidget(self._resume_button)
 
         content_layout.addWidget(self._speech_row)
@@ -788,13 +888,13 @@ class OverlayWindow(QWidget):
         self._prev_button.setIcon(ui_icons.icon("arrow_left", 20))
         self._prev_button.setIconSize(QSize(20, 20))
         self._prev_button.clicked.connect(self.show_previous)
-        history.addWidget(self._prev_button)
+        history.addWidget(self._prev_button, 0, Qt.AlignmentFlag.AlignTop)
 
         self._position_label = QLabel("", self._history_box)
         self._position_label.setObjectName("historyLabel")
         self._position_label.setFixedSize(80, 20)
         self._position_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        history.addWidget(self._position_label)
+        history.addWidget(self._position_label, 0, Qt.AlignmentFlag.AlignTop)
 
         self._next_button = QPushButton(self._history_box)
         self._next_button.setObjectName("historyButton")
@@ -802,9 +902,37 @@ class OverlayWindow(QWidget):
         self._next_button.setIcon(ui_icons.icon("arrow_right", 20))
         self._next_button.setIconSize(QSize(20, 20))
         self._next_button.clicked.connect(self.show_next)
-        history.addWidget(self._next_button)
+        history.addWidget(self._next_button, 0, Qt.AlignmentFlag.AlignTop)
 
         manual.addWidget(self._history_box)
+
+        # Appears only when the visible answer contains a code block; it takes
+        # the same 144 px slot as in the original row and shortens the input.
+        self._language_selector = QFrame(self._manual_row)
+        self._language_selector.setObjectName("languageSelector")
+        self._language_selector.setFixedSize(144, 24)
+        language_layout = QHBoxLayout(self._language_selector)
+        language_layout.setContentsMargins(6, 1, 6, 1)
+        language_layout.setSpacing(3)
+        self._language_buttons: dict[str, QPushButton] = {}
+        for label, language in (
+            ("Py", "Python"),
+            ("C++", "C++"),
+            ("Java", "Java"),
+            ("JS", "JavaScript"),
+        ):
+            button = QPushButton(label, self._language_selector)
+            button.setObjectName("langButton")
+            button.setFixedHeight(22)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(
+                lambda _checked=False, name=language: self._set_language(name)
+            )
+            language_layout.addWidget(button)
+            self._language_buttons[language] = button
+        self._language_selector.hide()
+        manual.addWidget(self._language_selector)
 
         self._manual_input = QLineEdit(self._manual_row)
         self._manual_input.setObjectName("manualInput")
@@ -825,7 +953,7 @@ class OverlayWindow(QWidget):
         self._manual_resume_button.setFixedSize(34, 24)
         self._manual_resume_button.setIcon(ui_icons.icon("pencil", 20))
         self._manual_resume_button.setIconSize(QSize(20, 20))
-        self._manual_resume_button.clicked.connect(self.info_requested.emit)
+        self._manual_resume_button.clicked.connect(self._manual_input.clear)
         manual.addWidget(self._manual_resume_button)
 
         content_layout.addWidget(self._manual_row)
@@ -881,6 +1009,16 @@ class OverlayWindow(QWidget):
         self._response._content_layout.addWidget(self._answer_view, 1)
         self._answer_view_index = self._response._content_layout.indexOf(self._answer_view)
 
+        # The original answer panel is always the Chromium view.  The text
+        # browser stays as an invisible fallback for a machine without
+        # QtWebEngine; on a normal Windows install it is never shown.
+        self._answer_view.hide()
+        if self._settings.web_render and self._ensure_web_view() is not None:
+            self._web_view.show()
+            self._web_visible = True
+        else:
+            self._answer_view.show()
+
         # Sent screenshots are retained for the history/test surface but are
         # intentionally not drawn as extra chrome in the answer window.
         self._sent_attachment_host = QWidget(self._response._content)
@@ -902,6 +1040,7 @@ class OverlayWindow(QWidget):
             widget.installEventFilter(self)
 
         self.retranslate()
+        self._show_welcome_message()
 
     def retranslate(self) -> None:
         """Apply the current English interface strings."""
@@ -928,10 +1067,10 @@ class OverlayWindow(QWidget):
                 hotkey=self._settings.hotkeys.get("ask", "")
             )
         )
-        self._resume_button.setToolTip("Interview details / resume")
+        self._resume_button.setToolTip("Clear the input field")
         self._manual_input.setPlaceholderText("Ask any question manually ...")
         self._manual_ask_button.setToolTip("Ask the question")
-        self._manual_resume_button.setToolTip("Interview details / resume")
+        self._manual_resume_button.setToolTip("Clear the manual input field")
         self._prev_button.setToolTip("Previous answer")
         self._next_button.setToolTip("Next answer")
         self._position_label.setToolTip("Answer history")
@@ -941,8 +1080,17 @@ class OverlayWindow(QWidget):
 
     # ------------------------------------------------------------ lifecycle #
 
+    def _apply_bar_mask(self) -> None:
+        if self._collapsed:
+            self.setMask(
+                QRegion(0, 0, COLLAPSED_SIZE, COLLAPSED_SIZE, QRegion.RegionType.Ellipse)
+            )
+        else:
+            self.setMask(_rounded_region(self.width(), self.height(), BORDER_RADIUS))
+
     def showEvent(self, event) -> None:  # noqa: D102
         super().showEvent(event)
+        self._apply_bar_mask()
         stealth.apply_stealth(self)
         if self._answers_visible:
             self._position_response()
@@ -962,6 +1110,7 @@ class OverlayWindow(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: D102
         super().resizeEvent(event)
+        self._apply_bar_mask()
         self._position_response()
         self._preview.reposition(self)
 
@@ -1066,6 +1215,7 @@ class OverlayWindow(QWidget):
         index = max(self._device_combo.findData(current), 0)
         self._device_combo.setCurrentIndex(index)
         self._device_combo.blockSignals(False)
+        self._resize_device_combo()
         self._device_arrow.raise_()
 
         if not current and devices:
@@ -1073,7 +1223,18 @@ class OverlayWindow(QWidget):
             self._settings.audio_device = chosen.id
             self._settings.save()
 
+    def _resize_device_combo(self) -> None:
+        """Keep the selector at 130 px, widening only for a long device name."""
+        text = self._device_combo.currentText()
+        if not self._device_combo.currentData():
+            width = _DeviceComboBox.MIN_WIDTH
+        else:
+            width = QFontMetrics(self._device_combo.font()).horizontalAdvance(text) + 46
+        self._device_combo.set_desired_width(width)
+        self._device_arrow.move(self._device_combo.width() - 14, 0)
+
     def _on_device_changed(self, _index: int) -> None:
+        self._resize_device_combo()
         device_id = self._device_combo.currentData() or ""
         if device_id and device_id != self._settings.audio_device:
             self._settings.audio_device = device_id
@@ -1371,8 +1532,9 @@ class OverlayWindow(QWidget):
             self._preview.hide_now()
 
     def _render_answer(self, text: str | None = None, *, force: bool = False) -> None:
-        """Render the buffered answer; math/mermaid answers use the web view."""
+        """Render the buffered answer in the original Chromium answer view."""
         payload = self._answer_buffer if text is None else text
+        self._update_language_selector(render.has_switchable_code(payload))
         if self._should_render_web(payload):
             view = self._ensure_web_view()
             if view is not None:
@@ -1406,7 +1568,7 @@ class OverlayWindow(QWidget):
     def _should_render_web(self, text: str) -> bool:
         if not self._settings.web_render or not text or self._web_failed:
             return False
-        return render.needs_web_view(text)
+        return self._web_view is not None
 
     def _ensure_web_view(self):
         """Create the QtWebEngine view on first need; None disables rich rendering."""
@@ -1420,7 +1582,7 @@ class OverlayWindow(QWidget):
             view = RichAnswerWebView(self._response._content)
         except Exception as exc:  # noqa: BLE001 - fall back to the text view
             self._web_failed = True
-            self.set_status(f"math/diagram rendering unavailable: {exc}")
+            self.set_status(f"answer rendering unavailable: {exc}")
             return None
         view.ready_changed.connect(self._on_web_ready)
         self._response._content_layout.insertWidget(self._answer_view_index + 1, view, 1)
@@ -1432,19 +1594,39 @@ class OverlayWindow(QWidget):
         """Swap the answer into the web view once its assets have loaded."""
         if not ready:
             self._web_failed = True
+            self._show_text_answer(self._answer_buffer)
+            if not self._answer_buffer:
+                self._show_welcome_message()
+            return
         if self._should_render_web(self._answer_buffer):
             self._render_answer(force=True)
 
+    def _show_welcome_message(self) -> None:
+        """Show the original help table on a fresh answer window."""
+        try:
+            from .webview import welcome_fragment
+
+            fragment = welcome_fragment(self._settings.hotkeys)
+        except Exception:  # noqa: BLE001 - welcome is optional
+            return
+        if self._web_view is not None and self._web_visible:
+            self._web_view.set_content(fragment)
+        else:
+            self._answer_view.setHtml(fragment)
+
     def _reset_answer_panel(self) -> None:
-        """Clear both renderers and show the text view again."""
+        """Clear the answer surface, keeping the original web renderer active."""
         self._answer_buffer = ""
         self._answer_view.clear()
         if self._web_view is not None:
             self._web_view.clear_content()
-        if self._web_visible:
-            self._web_visible = False
-            self._web_view.hide()
+            if not self._web_visible:
+                self._answer_view.hide()
+                self._web_view.show()
+                self._web_visible = True
+        else:
             self._answer_view.show()
+        self._update_language_selector(False)
         if self._answers_visible and self.isVisible():
             self._position_response()
             self._response.show()
@@ -1455,6 +1637,7 @@ class OverlayWindow(QWidget):
         scrollbar = self._answer_view.verticalScrollBar()
         at_bottom = scrollbar is not None and scrollbar.value() >= scrollbar.maximum() - 4
         self._render_answer(force=force)
+        self._update_language_selector()
         if at_bottom and scrollbar is not None and not self._web_visible:
             scrollbar.setValue(scrollbar.maximum())
         if force:
@@ -1556,15 +1739,32 @@ class OverlayWindow(QWidget):
         self._language_combo.blockSignals(True)
         self._language_combo.setCurrentText(language)
         self._language_combo.blockSignals(False)
+        self._update_language_selector()
 
     def _set_language(self, language: str) -> None:
-        """Set the hidden language selector from a menu action."""
+        """Choose a code language from the bar buttons or the context menu."""
         self._language_combo.setCurrentText(language)
+
+    def _update_language_selector(self, visible: bool | None = None) -> None:
+        """Show the original four-button selector for answers containing code."""
+        if not hasattr(self, "_language_selector"):
+            return
+        if visible is None:
+            visible = render.has_switchable_code(self._answer_buffer)
+        self._language_selector.setVisible(bool(visible))
+        for language, button in self._language_buttons.items():
+            active = language == self._variant_language
+            if button.property("active") == active:
+                continue
+            button.setProperty("active", active)
+            button.style().unpolish(button)
+            button.style().polish(button)
 
     def _show_variant(self, language: str, text: str, *, cached: bool = False) -> None:
         self._variant_language = language
         self._answer_buffer = text
         self._render_answer(force=True)
+        self._update_language_selector()
         if language == "auto":
             self.set_status("showing the original answer")
         elif cached:
@@ -1634,6 +1834,7 @@ class OverlayWindow(QWidget):
         self._select_language("auto")
         self._answer_buffer = item["answer"]
         self._render_answer(force=True)
+        self._update_language_selector()
 
     # --------------------------------------------------------------- history #
 
@@ -1711,16 +1912,15 @@ class OverlayWindow(QWidget):
         self._content.hide()
         self._collapsed_logo.show()
         self.setFixedSize(COLLAPSED_SIZE, COLLAPSED_SIZE)
-        region = QRegion(0, 0, COLLAPSED_SIZE, COLLAPSED_SIZE, QRegion.RegionType.Ellipse)
-        self.setMask(region)
+        self._apply_bar_mask()
         self.update()
 
     def _expand_bar(self) -> None:
         self._collapsed = False
-        self.clearMask()
         self._content.show()
         self._collapsed_logo.hide()
         self.setFixedSize(BAR_WIDTH, self._expanded_height)
+        self._apply_bar_mask()
         self.update()
 
     # ------------------------------------------------------------ click-through #

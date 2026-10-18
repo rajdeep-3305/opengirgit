@@ -123,7 +123,6 @@ class AppController(QObject):
             self._conversations,
             self.context_string,
         )
-        self._overlay.setWindowTitle(f"OpenGirGit — {email}")
         self._overlay.mic_toggled.connect(self._on_mic_toggled)
         self._overlay.screenshot_requested.connect(self.take_screenshot)
         self._overlay.settings_requested.connect(self.open_settings)

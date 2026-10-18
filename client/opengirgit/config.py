@@ -11,6 +11,7 @@ from typing import Any
 APP_DIR_NAME = ".opengirgit"
 BASE_DIR = Path.home() / APP_DIR_NAME
 CONFIG_PATH = BASE_DIR / "config.json"
+CONFIG_VERSION = 2
 
 DEFAULT_SCREENSHOT_PROMPT = (
     "Read the problem or task in this screenshot and answer it completely. "
@@ -63,6 +64,7 @@ UI_SCALES = (0, 100, 110, 125, 150, 175, 200)
 
 @dataclass
 class AppSettings:
+    config_version: int = CONFIG_VERSION
     server_url: str = "http://127.0.0.1:8000"
 
     # Speech-to-text
@@ -79,8 +81,8 @@ class AppSettings:
     auto_ask: bool = True
     partials: bool = True  # show live in-progress transcripts (local whisper re-runs)
     decoy_cursor: bool = True  # hide the real cursor during region selection
-    web_render: bool = True  # render math/mermaid answers with the embedded web view
-    opacity: float = 0.96
+    web_render: bool = True  # render answers with the embedded web view
+    opacity: float = 0.95
     screenshot_prompt: str = DEFAULT_SCREENSHOT_PROMPT
 
     # Transport / interface
@@ -96,8 +98,14 @@ class AppSettings:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppSettings:
+        data = dict(data or {})
+        # v0.2.2 shipped 0.96 as the default; the original overlay uses 0.95.
+        # Migrate untouched configs once, without touching any later choice.
+        if "config_version" not in data and data.get("opacity") == 0.96:
+            data["opacity"] = 0.95
+        data["config_version"] = CONFIG_VERSION
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
-        clean = {k: v for k, v in (data or {}).items() if k in known}
+        clean = {k: v for k, v in data.items() if k in known}
         settings = cls(**clean)
         merged = dict(DEFAULT_HOTKEYS)
         merged.update({k: v for k, v in (clean.get("hotkeys") or {}).items() if isinstance(v, str)})

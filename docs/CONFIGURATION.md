@@ -49,8 +49,8 @@ interface and transcription are English-only; there is no language picker.
 | `auto_ask` | `true` | Submit a question automatically when a final transcript arrives. |
 | `partials` | `true` | Live partial transcripts while the local engine is transcribing. |
 | `decoy_cursor` | `true` | Hide the real cursor during region selection (see stealth notes). |
-| `web_render` | `true` | Render LaTeX math and mermaid diagrams in the embedded QtWebEngine view (falls back to plain text when unavailable; set `false` to save memory). |
-| `opacity` | `0.96` | Overlay opacity. |
+| `web_render` | `true` | Render answers in the embedded QtWebEngine view (code highlighting, LaTeX, and mermaid). Set `false` to use the lightweight text fallback and save memory; math and diagrams are not drawn there. |
+| `opacity` | `0.95` | Overlay opacity. |
 | `screenshot_prompt` | built-in | Prompt used when you attach screenshot(s) with no typed question. |
 | `chat_transport` | `auto` | `auto` (WebSocket, falls back to SSE) · `sse` · `websocket`. |
 | `ui_scale` | `0` | Interface scale in percent (`0` follows the system/session DPI; 100–200 preset). Applied at startup — takes effect after a restart. |
