@@ -1,8 +1,10 @@
 # OpenGirGit
 
 <p align="center">
-  <img src="docs/media/opengirgit-lockup.png" alt="OpenGirGit" width="480">
+  <img src="docs/media/opengirgit-hero.png" alt="OpenGirGit — stay in the room, not in the share" width="100%">
 </p>
+
+<p align="center"><sub>Interface mock-up: the overlay listening, with a streamed answer.</sub></p>
 
 An open-source **interview-copilot overlay**: it listens to the interviewer through
 your speakers, transcribes speech in real time, and streams AI answers into a
@@ -40,7 +42,6 @@ knows how to stay out of a screen share.
 
 ## Table of contents
 
-- [See it](#see-it)
 - [Features](#features)
 - [What is *not* in this repo](#what-is-not-in-this-repo)
 - [Repository layout](#repository-layout)
@@ -59,16 +60,6 @@ knows how to stay out of a screen share.
 - [License](#license)
 
 ---
-
-## See it
-
-<p align="center">
-  <a href="docs/media/opengirgit-demo.mp4">
-    <img src="docs/media/opengirgit-demo.webp" alt="OpenGirGit demo — answers stream in, word by word" width="760">
-  </a>
-</p>
-
-<p align="center"><sub>▶ 22-second silent demo (loops automatically) · <a href="docs/media/opengirgit-demo.mp4">watch the MP4</a></sub></p>
 
 ## Features
 
