@@ -749,8 +749,10 @@ def test_history_dialog_exports_and_copies(qt_app, tmp_path, monkeypatch):
 
     dialog = HistoryDialog(conversations)
     assert dialog._sessions.count() == 1  # noqa: SLF001
-    # the light palette keeps headings visible (regression: white-on-white)
-    assert "#111111" in dialog._viewer.document().defaultStyleSheet()  # noqa: SLF001
+    # the dark palette keeps headings visible against the dialog background
+    assert "#ececf1" in dialog._viewer.document().defaultStyleSheet()  # noqa: SLF001
+    assert "#0d1117" in dialog.styleSheet()
+    assert dialog.windowFlags() & Qt.WindowType.FramelessWindowHint
 
     dialog._export_selected()  # noqa: SLF001
     written = target.read_text(encoding="utf-8")

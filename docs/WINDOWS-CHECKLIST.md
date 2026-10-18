@@ -68,6 +68,7 @@ Share the **whole screen** in Teams / Zoom / Meet (not a single window).
       recording (the overlay must not be in it).
 - [ ] While the overlay updates, focus stays in the meeting app (typing there keeps working).
 - [ ] The overlay has no taskbar button and does not appear in Alt+Tab.
+- [ ] Sign-in, interview-details, settings, history and feedback dialogs are absent from the share too.
 
 > Window-share mode (sharing one app window) is a different capture path; note
 > whether the overlay leaks there — that is expected to vary by app.

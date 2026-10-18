@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QThread
-from PySide6.QtGui import QGuiApplication, QPixmap
+from PySide6.QtCore import QPoint, QSize, Qt, QThread
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from . import render as render_mod
 from . import resume as resume_mod
+from . import stealth, ui_icons
 from .api import ApiClient, ApiError
 from .audio import list_devices
 from .capture import pixmap_to_jpeg_b64
@@ -112,30 +113,239 @@ class _WorkerOwner:
 
 
 # --------------------------------------------------------------------------- #
+# Shared dark dialog chrome
+# --------------------------------------------------------------------------- #
+
+DIALOG_STYLESHEET = """
+QDialog {
+    background: transparent;
+    color: #f0f6fc;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+}
+QLabel { background: transparent; color: #c9d1d9; }
+QLabel#dialogTitle { color: #f0f6fc; font-size: 17px; font-weight: 600; }
+QLabel#dialogSubtitle { color: #8b949e; font-size: 12px; }
+QLabel#dialogHint, QLabel#dialogStatus { color: #8b949e; font-size: 12px; }
+QPushButton {
+    background-color: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    border-radius: 7px;
+    padding: 6px 14px;
+    min-height: 16px;
+}
+QPushButton:hover { background-color: #30363d; border-color: #8b949e; }
+QPushButton:pressed { background-color: #161b22; }
+QPushButton:default {
+    background-color: #238636;
+    border-color: #2ea043;
+    color: #ffffff;
+    font-weight: 600;
+}
+QPushButton:default:hover { background-color: #2ea043; }
+QPushButton:disabled { color: #6e7681; border-color: #21262d; }
+QPushButton#dialogClose { background: transparent; border: none; border-radius: 14px; padding: 0; }
+QPushButton#dialogClose:hover { background-color: rgba(248, 81, 73, 0.85); }
+QLineEdit, QPlainTextEdit, QTextBrowser, QListWidget, QComboBox, QSpinBox {
+    background-color: #161b22;
+    color: #f0f6fc;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 5px 7px;
+    selection-background-color: #1f6feb;
+    selection-color: #ffffff;
+}
+QLineEdit:focus, QPlainTextEdit:focus, QTextBrowser:focus, QComboBox:focus, QSpinBox:focus {
+    border-color: #58a6ff;
+}
+QLineEdit:disabled, QPlainTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled {
+    color: #6e7681;
+}
+QComboBox QAbstractItemView {
+    background-color: #161b22;
+    color: #f0f6fc;
+    border: 1px solid #30363d;
+    selection-background-color: #1f6feb;
+    outline: 0;
+}
+QComboBox::drop-down { border: none; width: 22px; }
+QSpinBox::up-button, QSpinBox::down-button { background-color: #21262d; border: none; width: 16px; }
+QTabWidget::pane { border: 1px solid #30363d; border-radius: 8px; background-color: #0d1117; }
+QTabBar::tab {
+    background: transparent;
+    color: #8b949e;
+    padding: 7px 14px;
+    border: 1px solid transparent;
+    border-bottom: none;
+}
+QTabBar::tab:selected {
+    color: #f0f6fc;
+    background-color: #161b22;
+    border-color: #30363d;
+    border-top-left-radius: 7px;
+    border-top-right-radius: 7px;
+}
+QTabBar::tab:hover { color: #c9d1d9; }
+QGroupBox {
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    margin-top: 13px;
+    padding: 14px 10px 10px 10px;
+    color: #c9d1d9;
+}
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #8b949e; }
+QCheckBox { color: #c9d1d9; spacing: 8px; }
+QListWidget { outline: 0; padding: 4px; }
+QListWidget::item { padding: 6px; border-radius: 6px; color: #c9d1d9; }
+QListWidget::item:selected { background-color: rgba(31, 111, 235, 0.35); color: #ffffff; }
+QListWidget::item:hover { background-color: rgba(255, 255, 255, 0.06); }
+QScrollArea { border: none; background: transparent; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+QScrollBar::handle:vertical { background: #30363d; border-radius: 5px; min-height: 24px; }
+QScrollBar::handle:vertical:hover { background: #484f58; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+QScrollBar::handle:horizontal { background: #30363d; border-radius: 5px; min-width: 24px; }
+QScrollBar::handle:horizontal:hover { background: #484f58; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
+QToolTip {
+    background-color: #161b22;
+    color: #f0f6fc;
+    border: 1px solid #30363d;
+    padding: 4px 6px;
+}
+"""
+
+
+class _DialogBase(QDialog, _WorkerOwner):
+    """Frameless dark card shared by every OpenGirGit dialog.
+
+    The original app paints its dialogs as rounded cards instead of native
+    title-bar windows.  Keeping the frame in one place also means every dialog
+    gets the Windows capture-exclusion treatment on show.
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        title: str,
+        subtitle: str = "",
+    ) -> None:
+        QDialog.__init__(self, parent)
+        _WorkerOwner.__init__(self)
+        self.setWindowTitle(title)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet(DIALOG_STYLESHEET)
+        self._drag_offset: QPoint | None = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 14, 20, 18)
+        root.setSpacing(10)
+
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        brand = QLabel()
+        brand.setFixedSize(24, 24)
+        brand.setPixmap(ui_icons.pixmap("logo", 24))
+        header.addWidget(brand)
+        title_label = QLabel(title)
+        title_label.setObjectName("dialogTitle")
+        header.addWidget(title_label)
+        if subtitle:
+            subtitle_label = QLabel(subtitle)
+            subtitle_label.setObjectName("dialogSubtitle")
+            header.addWidget(subtitle_label)
+        header.addStretch(1)
+
+        close = QPushButton()
+        close.setObjectName("dialogClose")
+        close.setIcon(ui_icons.icon("close", 15))
+        close.setIconSize(QSize(15, 15))
+        close.setFixedSize(28, 28)
+        close.setToolTip("Close")
+        close.setCursor(Qt.CursorShape.PointingHandCursor)
+        close.clicked.connect(self.reject)
+        header.addWidget(close)
+        root.addLayout(header)
+
+        self.content = QVBoxLayout()
+        self.content.setSpacing(10)
+        root.addLayout(self.content, 1)
+
+    def paintEvent(self, _event) -> None:  # noqa: D102
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = self.rect().adjusted(0, 0, -1, -1)
+        painter.setPen(QPen(QColor("#30363d"), 1))
+        painter.setBrush(QColor("#0d1117"))
+        painter.drawRoundedRect(rect, 14, 14)
+
+    def showEvent(self, event) -> None:  # noqa: D102
+        super().showEvent(event)
+        stealth.apply_stealth(self)
+
+    def mousePressEvent(self, event) -> None:  # noqa: D102
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: D102
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: D102
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
+
+    def done(self, result: int) -> None:  # noqa: D102
+        self.wait_for_workers()
+        super().done(result)
+
+
+# --------------------------------------------------------------------------- #
 # Login (server URL + email OTP)
 # --------------------------------------------------------------------------- #
 
 
-class LoginDialog(QDialog, _WorkerOwner):
+class LoginDialog(_DialogBase):
     def __init__(self, settings: AppSettings, parent: QWidget | None = None) -> None:
-        QDialog.__init__(self, parent)
-        _WorkerOwner.__init__(self)
-        self.setWindowTitle("OpenGirGit — sign in")
-        self.setMinimumWidth(430)
+        super().__init__(parent, title="Sign in", subtitle="local server")
+        self.setMinimumWidth(520)
         self.settings = settings
         self.credentials: dict[str, str] | None = None
 
-        layout = QVBoxLayout(self)
+        layout = self.content
         form = QFormLayout()
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(8)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self._server = QLineEdit(settings.server_url)
         form.addRow("Server URL", self._server)
+        server_hint = QLabel("The bundled server starts automatically on this computer.")
+        server_hint.setObjectName("dialogHint")
+        form.addRow("", server_hint)
 
         self._email = QLineEdit()
         self._email.setPlaceholderText("you@example.com")
         form.addRow("Email", self._email)
+        email_hint = QLabel("Any email-shaped name works as a local username — no mail is sent.")
+        email_hint.setObjectName("dialogHint")
+        email_hint.setWordWrap(True)
+        form.addRow("", email_hint)
 
         otp_row = QHBoxLayout()
+        otp_row.setSpacing(8)
         self._otp = QLineEdit()
         self._otp.setPlaceholderText("6-digit code")
         self._send_button = QPushButton("Send code")
@@ -145,15 +355,23 @@ class LoginDialog(QDialog, _WorkerOwner):
         otp_container = QWidget()
         otp_container.setLayout(otp_row)
         form.addRow("One-time code", otp_container)
+        otp_hint = QLabel(
+            "The local server shows the code in the engine window and fills it in automatically."
+        )
+        otp_hint.setObjectName("dialogHint")
+        otp_hint.setWordWrap(True)
+        form.addRow("", otp_hint)
 
         layout.addLayout(form)
 
         self._status = QLabel("Enter your email, then press “Send code”.")
+        self._status.setObjectName("dialogStatus")
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText("Sign in")
+        buttons.button(QDialogButtonBox.Ok).setDefault(True)
         buttons.accepted.connect(self._verify)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -230,7 +448,7 @@ class LoginDialog(QDialog, _WorkerOwner):
 # --------------------------------------------------------------------------- #
 
 
-class InfoDialog(QDialog, _WorkerOwner):
+class InfoDialog(_DialogBase):
     def __init__(
         self,
         api: ApiClient,
@@ -238,17 +456,15 @@ class InfoDialog(QDialog, _WorkerOwner):
         cache: ResumeCache,
         parent: QWidget | None = None,
     ) -> None:
-        QDialog.__init__(self, parent)
-        _WorkerOwner.__init__(self)
-        self.setWindowTitle("Interview details")
-        self.setMinimumSize(580, 640)
+        super().__init__(parent, title="Interview details", subtitle="local context")
+        self.setMinimumSize(600, 700)
         self._api = api
         self._cache = cache
         self._parsed_resume: dict[str, Any] | None = context.get("resume")
         self._resume_path: str | None = cache.load().get("source_name") or None
         self.result: dict[str, Any] | None = None
 
-        layout = QVBoxLayout(self)
+        layout = self.content
 
         details = QGroupBox("Role")
         details_layout = QFormLayout(details)
@@ -450,7 +666,7 @@ class InfoDialog(QDialog, _WorkerOwner):
 # --------------------------------------------------------------------------- #
 
 
-class SettingsDialog(QDialog, _WorkerOwner):
+class SettingsDialog(_DialogBase):
     def __init__(
         self,
         settings: AppSettings,
@@ -460,17 +676,15 @@ class SettingsDialog(QDialog, _WorkerOwner):
         email: str = "",
         hotkey_state: tuple[str, str] | None = None,
     ) -> None:
-        QDialog.__init__(self, parent)
-        _WorkerOwner.__init__(self)
-        self.setWindowTitle("OpenGirGit settings")
-        self.setMinimumSize(560, 600)
+        super().__init__(parent, title="Settings", subtitle="OpenGirGit")
+        self.setMinimumSize(620, 620)
         self.settings = settings
         self._api = api
         self._email = email
         self._hotkey_state = hotkey_state
         self._working = AppSettings.from_dict(settings.to_dict())
 
-        layout = QVBoxLayout(self)
+        layout = self.content
         tabs = QTabWidget(self)
         layout.addWidget(tabs, 1)
 
@@ -734,20 +948,28 @@ class SettingsDialog(QDialog, _WorkerOwner):
 # --------------------------------------------------------------------------- #
 
 
-class HistoryDialog(QDialog):
+class HistoryDialog(_DialogBase):
     def __init__(self, conversations: ConversationStore, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Conversation history (local only)")
-        self.setMinimumSize(700, 540)
+        super().__init__(parent, title="Conversation history", subtitle="local only")
+        self.setMinimumSize(900, 600)
+        self.resize(940, 640)
         self._conversations = conversations
 
-        layout = QVBoxLayout(self)
+        layout = self.content
         row = QHBoxLayout()
+        row.setSpacing(12)
+
+        sessions_column = QVBoxLayout()
+        sessions_column.setSpacing(4)
+        sessions_label = QLabel("Previous sessions")
+        sessions_label.setObjectName("dialogHint")
+        sessions_column.addWidget(sessions_label)
 
         self._sessions = QListWidget()
-        self._sessions.setMaximumWidth(220)
+        self._sessions.setMaximumWidth(260)
         self._sessions.currentItemChanged.connect(self._show_session)
-        row.addWidget(self._sessions)
+        sessions_column.addWidget(self._sessions, 1)
+        row.addLayout(sessions_column)
 
         self._viewer = QTextBrowser()
         row.addWidget(self._viewer, 1)
@@ -804,7 +1026,7 @@ class HistoryDialog(QDialog):
             self._viewer.clear()
             return
         render_mod.render_into(
-            self._viewer, self._conversations.session_markdown(session), variant="light"
+            self._viewer, self._conversations.session_markdown(session), variant="dark"
         )
 
     # -- export ------------------------------------------------------------- #
@@ -858,7 +1080,7 @@ class HistoryDialog(QDialog):
 # --------------------------------------------------------------------------- #
 
 
-class FeedbackDialog(QDialog, _WorkerOwner):
+class FeedbackDialog(_DialogBase):
     """Send feedback to your own server (stored in its local database).
 
     Unlike the original app, nothing here phones home to a vendor: the message
@@ -866,16 +1088,15 @@ class FeedbackDialog(QDialog, _WorkerOwner):
     """
 
     def __init__(self, api: ApiClient, email: str = "", parent: QWidget | None = None) -> None:
-        QDialog.__init__(self, parent)
-        _WorkerOwner.__init__(self)
-        self.setWindowTitle("Send feedback")
-        self.setMinimumWidth(460)
+        super().__init__(parent, title="Send feedback", subtitle="local server")
+        self.setMinimumWidth(520)
         self._api = api
         self._email = email
 
-        layout = QVBoxLayout(self)
+        layout = self.content
 
         caption = QLabel("Feedback is stored on your own server. Nothing goes anywhere else.")
+        caption.setObjectName("dialogHint")
         caption.setWordWrap(True)
         layout.addWidget(caption)
 
