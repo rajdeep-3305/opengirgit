@@ -10,7 +10,7 @@ in [WINDOWS-CHECKLIST.md](WINDOWS-CHECKLIST.md).
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 152 offline tests, no network needed
+pytest                                    # 158 offline tests, no network needed
 ruff check server client tests packaging
 ```
 
@@ -145,6 +145,7 @@ The CI **windows-tests** job installs the client requirements on
 | Windows installer (Inno Setup, per-user) | ✅ CI compiles and attaches `…-setup.exe` on release tags; per-user layout, shortcuts, uninstaller and license page are declarative; ⏳ install → launch → upgrade → uninstall on real Windows |
 | TLS trust-store fallback + classified connection errors | ✅ unit tests: a certificate error is retried once against the OS-store ∪ certifi bundle on all three transports, then reported as a TLS diagnostic; DNS/refused/handshake failures get distinct messages; ⏳ a real corporate-proxy/antivirus environment |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
+| Dialog chrome | ✅ frameless dark cards, draggable headers, dark history rendering and capture-exclusion hooks are unit-tested offscreen; ⏳ appearance and screen-share exclusion on Windows |
 | WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
 | Native hotkeys (`RegisterHotKey`) | ✅ all 15 defaults parse and validate; ⏳ native registration on Windows |
 | Stealth (`WDA_EXCLUDEFROMCAPTURE`, Windows-only) | ⏳ verify with a screen-share |

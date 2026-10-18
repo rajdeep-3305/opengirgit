@@ -29,7 +29,7 @@ All server settings are environment variables (or `server/.env`); see
 | `DEEPGRAM_API_KEY` | – | If set, `/api/stt/token` mints short-lived Deepgram tokens. |
 | `DEEPGRAM_MODEL` | `nova-2` | Deepgram model; transcription is fixed to English. |
 | `DEEPGRAM_TOKEN_TTL_SECONDS` | `600` | Minted token lifetime. |
-| `APP_VERSION` | `0.2.2` | Reported by `/api/version`. |
+| `APP_VERSION` | `0.2.3` | Reported by `/api/version`. |
 
 ## Client settings
 
