@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     deepgram_token_ttl_seconds: int = 600
 
     # Misc
-    app_version: str = "0.2.1"
+    app_version: str = "0.2.2"
 
     @property
     def sqlite_path(self) -> Path:
