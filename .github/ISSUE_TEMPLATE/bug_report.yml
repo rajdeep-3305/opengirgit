@@ -10,15 +10,15 @@ body:
   - type: input
     id: os
     attributes:
-      label: OS and desktop
-      placeholder: "e.g. Windows 11 23H2, or Ubuntu 24.04 / GNOME Wayland"
+      label: Windows version
+      placeholder: "e.g. Windows 11 23H2 (build 22631)"
     validations:
       required: true
   - type: input
     id: install
     attributes:
       label: How are you running it?
-      placeholder: "release bundle v0.2.0 / from source with run.sh or run.ps1"
+      placeholder: "release bundle v0.2.1 / from source with run.ps1"
     validations:
       required: true
   - type: dropdown

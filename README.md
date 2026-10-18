@@ -19,8 +19,8 @@ chameleon perched on a branch. It doubles as the design brief, since this app
 knows how to stay out of a screen share.
 
 > **New here — just want to install it?** There's a plain-language,
-> no-coding-needed **[install & setup guide](docs/SETUP.md)** for Windows and
-> Linux (install → point it at a free local model → done).
+> no-coding-needed **[install & setup guide](docs/SETUP.md)** for Windows
+> (install → point it at a free local model → done).
 
 ```
 ┌──────────────── your machine ─────────────────┐        ┌─────── optional ───────┐
@@ -74,7 +74,7 @@ knows how to stay out of a screen share.
 
 | Area | What OpenGirGit does |
 |---|---|
-| **Speech input** | Captures **system audio loopback** — WASAPI on Windows, the PulseAudio/PipeWire **monitor** source on Linux (`parec`) — or a regular microphone, and resamples everything to 16 kHz mono. |
+| **Speech input** | Captures **system audio loopback** through WASAPI — or a regular microphone — and resamples everything to 16 kHz mono. |
 | **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. The local engine also fills the box **while the speaker is talking** (re-transcribes every ~1.2 s, with adaptive back-off on slow machines). |
 | **Answers** | Streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…), over **SSE** or the optional **WebSocket** transport (auto, with SSE fallback). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). The `code:` combo rewrites the shown answer's code in the picked language and **caches each variant per answer**. |
 | **Vision** | Hotkey → select a screen region. Each selection is **queued as a removable thumbnail**, so several regions (up to 5, e.g. a problem statement and its examples) can be attached to one question; the next question you type, speak or Ask carries them to a vision-capable model ("solve the coding problem on screen"). |
@@ -83,9 +83,9 @@ knows how to stay out of a screen share.
 | **Overlay UX** | Frameless, always-on-top, translucent, draggable bar with a short slide animation for collapse/expand and a startup fade; **click-through mode** (the mouse works through the overlay to the app underneath — `Shift+Alt+C` returns control); a **streaming preview popup** teases the answer while the panel is collapsed; tabbed settings (Server / Speech / Behaviour / Hotkeys); opacity and move hotkeys; resize grip; hi-DPI-aware thumbnails and an optional **interface scale** for 100–200 % sessions. |
 | **Hotkeys** | 15 global actions (the original's 14 plus click-through), editable **in the settings dialog** (empty value disables one) with validation. |
 | **Languages** | The interface ships an offline translation layer (English + German today) with `auto` following the desktop locale; adding a language is dropping one JSON file in [`client/opengirgit/translations/`](client/opengirgit/translations/README.md) — no Qt/`.qm` toolchain needed. |
-| **Stealth** | On Windows the windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab. During region selection the real cursor is blanked and a stand-in copy stays parked at the anchor, so a screen share sees an ordinary motionless cursor. |
+| **Stealth** | The windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab. During region selection the real cursor is blanked and a stand-in copy stays parked at the anchor, so a screen share sees an ordinary motionless cursor. |
 | **Auth** | Local email-OTP accounts issued by your own server (SMTP optional — dev mode prints the code). |
-| **Packaging** | `run.sh` / `run.ps1` bootstrap everything with one command; CI builds a PyInstaller **one-folder Windows build** (client + server in one exe) and a **per-user installer** (Inno Setup, no admin prompt, German + English wizard) on release tags, alongside a one-folder Linux tarball. |
+| **Packaging** | `run.ps1` bootstraps everything with one command; CI builds a PyInstaller **one-folder Windows build** (client + server in one exe) and a **per-user installer** (Inno Setup, no admin prompt, German + English wizard) on release tags. |
 | **Zero billing** | There is no payment code, no minute accounting and no phone-home anywhere in this repository. |
 
 ## What is *not* in this repo
@@ -104,7 +104,7 @@ knows how to stay out of a screen share.
 opengirgit/
 ├── README.md                  ← you are here
 ├── LICENSE                    ← MIT
-├── run.sh / run.ps1           ← one-command launcher (venv + deps + server + client)
+├── run.ps1                   ← one-command launcher (venv + deps + server + client)
 ├── docs/
 │   ├── SETUP.md               ← plain-language install & setup guide (start here)
 │   └── API.md                 ← HTTP/SSE/WS API reference implemented by server/
@@ -134,11 +134,10 @@ opengirgit/
 │   │   ├── dialogs.py         ← login / info / tabbed settings / history / feedback
 │   │   ├── api.py             ← HTTP client (auth, SSE + WebSocket streaming, retries)
 │   │   ├── workers.py         ← QThread helpers
-│   │   ├── audio.py           ← WASAPI / PulseAudio-monitor / mic capture
+│   │   ├── audio.py           ← WASAPI loopback / mic capture
 │   │   ├── dsp.py             ← downmix + linear resampler (pure numpy)
 │   │   ├── stt.py             ← local faster-whisper (with partials) & Deepgram
 │   │   ├── capture.py         ← screen region selection (live + frozen modes) + decoy cursor
-│   │   ├── portal.py          ← xdg-desktop-portal client (Wayland capture + hotkeys)
 │   │   ├── decoy.py           ← share-safe cursor (GDI bitmap / drawn arrow)
 │   │   ├── render.py          ← markdown → HTML; math/mermaid extraction for the web view
 │   │   ├── webview.py         ← optional QtWebEngine answer view (KaTeX + mermaid)
@@ -156,27 +155,21 @@ opengirgit/
 │   └── .env.example
 ├── tests/                     ← offline unit tests (server units + client units)
 │   └── e2e/                   ← mock OpenAI-compatible model + end-to-end script
-└── .github/workflows/         ← ci.yml (lint/tests/e2e) + release.yml (Windows + Linux bundles)
+└── .github/workflows/         ← ci.yml (lint/tests/e2e) + release.yml (Windows bundle + installer)
 ```
 
 ## Quick start
 
-Requirements: Python **3.10+** (3.11–3.13 recommended). Windows and Linux are
-the two supported targets — **macOS is out of scope** (see the
-[platform table](#platform-support)). **System-audio loopback** works on
-Windows (WASAPI) and Linux (PulseAudio/PipeWire monitor via `parec`). The
-capture-exclusion stealth APIs are Windows-only — on Linux the app still runs,
-with microphone (or monitor) input and without screen-share invisibility.
+Requirements: **Windows 10 2004+ or Windows 11 (64-bit)** and Python **3.10+**
+(3.11–3.13 recommended). Windows is the only supported target — capture
+exclusion is the core of the product and Win32 is where it exists. Linux and
+macOS are out of scope (see the [platform table](#platform-support)).
 
 ### One command (recommended)
 
-```bash
-./run.sh                 # Linux: venv + deps + server + client
-./run.sh --check         # validate prerequisites only
-```
-
 ```powershell
-.\run.ps1                # Windows PowerShell, same thing
+.\run.ps1                # Windows PowerShell: venv + deps + server + client
+.\run.ps1 --check        # validate prerequisites only
 ```
 
 The script creates a shared `.venv`, installs everything (once; re-runs are
@@ -184,11 +177,9 @@ instant), starts the API server, waits for `/api/health`, then opens the client.
 `HOST`, `PORT`, `PYTHON` and `OPENGIRGIT_SERVER_URL` override the defaults;
 `--no-server` / `--no-client` run only one half.
 
-Prebuilt **Windows and Linux** bundles (one folder, client + server, no Python
-needed) are attached to GitHub releases by CI — Windows also gets a **per-user
-installer** (`OpenGirGit-windows-x64-setup.exe`, no admin prompt, English/German
-wizard), and the Linux tarball ships `install-linux.sh`, which registers the
-launcher entry the desktop needs for portal hotkeys. See
+Prebuilt **Windows** bundles (one folder, client + server, no Python needed) and
+a **per-user installer** (`OpenGirGit-windows-x64-setup.exe`, no admin prompt,
+English/German wizard) are attached to GitHub releases by CI. See
 [`packaging/`](packaging/README.md) for building your own.
 
 ### Manual setup
@@ -311,35 +302,34 @@ Client settings live in `client/.env` (first run) and are then persisted to
 
 Files written by the client: `~/.opengirgit/{config,credentials,context,conversations,resume_cache}.json`.
 `credentials.json` contains a bearer token: the client prefers the **OS keyring**
-(Windows Credential Manager, macOS Keychain, Secret Service on Linux) and only
-falls back to the plaintext file, which is written **owner-only** (`0600`) like
-the other store files. Keep it out of version control (the repository
+(Windows Credential Manager) and only falls back to the plaintext file, which is
+written **owner-only** (`0600`) like the other store files. Keep it out of version control (the repository
 `.gitignore` already ignores it).
 
 ## Platform support
 
-| Capability | Windows | Linux | macOS |
-|---|---|---|---|
-| Overlay, dialogs, streaming answers | ✅ | ✅ X11 and Wayland | ✅ |
-| Region screenshots | ✅ native grab | ✅ X11 native grab; Wayland via `org.freedesktop.portal.Screenshot` (frozen image shown while selecting) | ✅ with Screen Recording permission |
-| System-wide hotkeys | ✅ `RegisterHotKey` | ✅ X11 `XGrabKey`; Wayland via `org.freedesktop.portal.GlobalShortcuts` — needs the `.desktop` launcher entry, see [`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md) | ⚠️ window-local shortcuts |
-| System-audio loopback | ✅ WASAPI | ✅ PulseAudio/PipeWire monitor (`parec`) | ⚠️ needs BlackHole (documented) |
-| Capture exclusion (screen-share invisibility) | ✅ `WDA_EXCLUDEFROMCAPTURE` | ❌ no such API — the decoy cursor is the mitigation | ❌ |
-| Taskbar / Alt-Tab hiding | ✅ `WS_EX_TOOLWINDOW` | — (overlay is a normal always-on-top window) | — |
+OpenGirGit targets **Windows 10 2004+ / Windows 11 (64-bit)** only. Stealth is
+the point of the product, and Win32 capture exclusion is the only supported way
+to get it. Linux and macOS are out of scope: there are no builds, no install
+guides, and no support claims for them.
 
-> macOS entries above describe best-effort, untested behaviour — there is no
-> CI or hardware verification for it. Windows and Linux are what this project
-> builds, tests and ships.
+| Capability | Windows |
+|---|---|
+| Overlay, dialogs, streaming answers | ✅ |
+| Region screenshots | ✅ native grab |
+| System-wide hotkeys | ✅ `RegisterHotKey` |
+| System-audio loopback | ✅ WASAPI |
+| Capture exclusion (screen-share invisibility) | ✅ `WDA_EXCLUDEFROMCAPTURE` |
+| Taskbar / Alt-Tab hiding | ✅ `WS_EX_TOOLWINDOW` |
+
+The source is portable Python and still runs on Linux for development, but the
+system-audio, global-hotkey and stealth backends exist only on Windows.
 
 ## Global hotkeys
 
 Defaults (all remappable in the settings dialog or `config.json`). They are
-**system-wide** on Windows (`RegisterHotKey`), on X11 (`XGrabKey`, with the
-NumLock/CapsLock variants and server-side auto-repeat suppression) and on
-Wayland through the `GlobalShortcuts` portal. On Wayland the desktop shows its
-own confirmation dialog and owns the bindings, so the app must be started from
-its launcher entry (the portal scopes shortcuts by desktop id; a plain terminal
-launch keeps window-local shortcuts, which the settings dialog reports):
+**system-wide** on Windows through `RegisterHotKey`, with OS key-repeat
+suppressed for the tap-style actions:
 
 | Action | Default | Notes |
 |---|---|---|
@@ -359,17 +349,14 @@ launch keeps window-local shortcuts, which the settings dialog reports):
   faster-whisper by default; Deepgram if enabled). Questions/screenshots →
   only to the LLM endpoint your server is configured with. No third party
   receives anything else.
-* **Screen-share invisibility (Windows).** Every OpenGirGit window calls
+* **Screen-share invisibility.** Every OpenGirGit window calls
   `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`, which excludes it
   from `BitBlt`-style capture used by Zoom/Teams/Meet, and sets
-  `WS_EX_TOOLWINDOW` so it stays out of the taskbar and Alt-Tab. On Windows
-  builds older than 19041 the flag degrades and the window appears as a black
-  rectangle in shares — the same caveat the original has.
-* **Screen-share invisibility is Windows-only.** Linux and macOS expose no
-  supported API for excluding a window from screen capture, so on those systems
-  the overlay *is* visible to a screen share; the decoy cursor remains the only
-  mitigation there. (On Wayland the frozen screenshot flow still keeps the
-  selection overlay out of the app's own captures.)
+  `WS_EX_TOOLWINDOW` so it stays out of the taskbar and Alt-Tab. This needs
+  Windows 10 version 2004 (build 19041) or newer; on older builds the flag
+  degrades and the window appears as a black rectangle in shares — the same
+  caveat the original has. Unsupported platforms have no capture exclusion at
+  all; do not rely on stealth there.
 * **Decoy cursor (`decoy_cursor=true`).** While you drag the screenshot region,
   the real pointer is blanked on the selection overlay and a stand-in copy
   (the actual system cursor bitmap on Windows, read via GDI) stays parked at
@@ -438,8 +425,6 @@ entirely: your server bills nothing.
   fallback, cancellation, retries) — the original only speaks WebSocket.
 * **Session export to Markdown** — one session, the whole history or straight to
   the clipboard; the original keeps history inside its own UI only.
-* **Linux system-audio loopback** via the PulseAudio/PipeWire monitor (the
-  original's loopback is Windows-only).
 * **Interface translations**: a dependency-free, offline catalog layer — English
   and German ship today, and adding a language is one JSON file.
 * Latency when configured equivalently (Deepgram + cloud LLM): the plumbing
@@ -464,7 +449,7 @@ from the engine and model you configure.
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 191 offline tests, no network needed
+pytest                                    # 161 offline tests, no network needed
 ruff check server client tests packaging tools
 python tools/collect_strings.py --check   # translation inventory is in sync
 ```
@@ -480,7 +465,7 @@ Test layout:
 | `tests/test_client_dsp.py` | down-mix, resampling (single-pass == chunked), levels |
 | `tests/test_client_config.py` | settings defaults, clamping, env overrides, context formatting |
 | `tests/test_client_stores.py` | bounded history, atomic writes, credential fallback, Markdown export |
-| `tests/test_client_audio.py` | PulseAudio/PipeWire monitor parsing, `parec` device ids, platform hints |
+| `tests/test_client_audio.py` | device hints for missing loopback/microphone inputs |
 | `tests/test_client_i18n.py` | catalog loading/fallback, German completeness, placeholder parity, `collect_strings --check` |
 | `tests/test_client_hotkeys.py` | hotkey parsing + editor validation (skipped without PySide6) |
 | `tests/test_client_api.py` | SSE assembly, WebSocket transport (auto/forced, cancel, fallback), retry policy, URLs |
@@ -512,19 +497,15 @@ python tests/e2e/stt_smoke.py --wav speech.wav --model base.en --expect "hello"
 # real-time replay + latency measurement with a specific silence gate:
 python tests/e2e/stt_smoke.py --wav speech.wav --model tiny.en --realtime --silence 0.4
 
-# live capture — system audio loopback:
-#   Windows: WASAPI loopback      Linux: PulseAudio/PipeWire monitor (parec)
+# live capture — system audio loopback (WASAPI):
 python tests/e2e/stt_smoke.py --capture 8 --source system
 
 # live capture from a microphone on an explicit device:
 python tests/e2e/stt_smoke.py --capture 8 --source microphone --device input:3
 ```
 
-On the default `system` source the script picks the default device itself:
-WASAPI loopback on Windows, the default sink's monitor on Linux (PulseAudio or
-PipeWire via `pactl`). Verified end-to-end on PipeWire:
-`--capture 16 --source system` transcribed a played speech clip word-perfect
-with 8 live partial updates.
+On the default `system` source the script picks the default WASAPI loopback
+device itself.
 
 The first run downloads the model; the script exits 0 only when a transcript
 (and the `--expect` substring, if given) came back.
@@ -568,13 +549,11 @@ lowest-latency option.
 
 ### Verification status
 
-Platform-specific paths are tracked in hands-on checklists:
+Windows-specific paths are tracked in
 **[`docs/WINDOWS-CHECKLIST.md`](docs/WINDOWS-CHECKLIST.md)** (launcher, WASAPI
-loopback, stealth, decoy cursor, hotkeys under a meeting app, the packaged exe)
-and **[`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md)** (Wayland portal
-capture and hotkeys, X11 grabs, `parec` loopback, the Linux bundle). The CI
-**windows-tests** job installs the client requirements on `windows-latest` and
-runs the core suite as a first line of defence.
+loopback, stealth, decoy cursor, hotkeys under a meeting app, the packaged exe).
+The CI **windows-tests** job installs the client requirements on
+`windows-latest` and runs the core suite as a first line of defence.
 
 | Area | Verification |
 |---|---|
@@ -585,35 +564,31 @@ runs the core suite as a first line of defence.
 | Live partials (local engine) | ✅ real speech clip, real-time replay: 9 partial updates during an 11 s utterance |
 | Answer rendering (pygments highlighting, tables, fallback) | ✅ unit tests + offscreen render |
 | Math (KaTeX) + mermaid rendering | ✅ offscreen WebEngine test: formulas become KaTeX nodes, the diagram renders as an SVG, code blocks round-trip untouched; ⏳ appearance inside the capture-excluded overlay on Windows |
-| Math/diagram self-test (`--check-render`) | ✅ from source and inside the Linux PyInstaller bundle; the release workflow runs it on the Windows exe (non-fatal step) |
+| Math/diagram self-test (`--check-render`) | ✅ from source and inside a PyInstaller one-folder build; the release workflow runs it on the Windows exe (non-fatal step) |
 | Screenshot thumbnails | ✅ offscreen UI tests |
 | Multi-region screenshots | ✅ queue/cap/remove/attach tests + `run_e2e.py` sends two images in one vision request; ⏳ Windows capture flow |
 | Decoy cursor (region selection) | ✅ blank/dummy/glide logic + pixmap fallback offscreen; ⏳ GDI bitmap and share appearance on Windows |
 | Hotkey editor | ✅ validation + save flow offscreen; registration path unchanged |
-| Click-through toggle | ✅ state machine + portable `WindowTransparentForInput` fallback (offscreen), refusal without a hotkey; ⏳ real click pass-through on Windows/X11 and compositor behaviour on Wayland |
+| Click-through toggle | ✅ state machine + portable `WindowTransparentForInput` fallback (offscreen), refusal without a hotkey; ⏳ real click pass-through on Windows |
 | Streaming preview popup | ✅ show/update/linger/hide while collapsed, teaser cleaning (offscreen); ⏳ on-screen placement |
 | Startup pre-warm | ✅ health probe + WebSocket handshake with stubbed transports, failures swallowed; ⏳ latency delta against a live provider |
-| UI animations (collapse, preview, startup fade) | ✅ end-state tests offscreen; ⏳ visual smoothness on Windows/X11 |
+| UI animations (collapse, preview, startup fade) | ✅ end-state tests offscreen; ⏳ visual smoothness on Windows |
 | Feedback dialog | ✅ payload test + offscreen send flow |
 | WebSocket transport | ✅ in-process server tests (auth, chat/vision frames, validation, error frames) + `run_e2e.py` streams chat/vision over WS and cancels mid-stream + verified against the **frozen bundle** (chat over ws/sse/auto, vision over ws, unauthenticated socket rejected); ⏳ reverse-proxied `wss://` deployments |
 | Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case); sessions are auto-named after their first question (truncation, empty and explicit-title cases tested) |
 | Code-language rewrites (per-answer variants) | ✅ rewrite/cache/restore/instruction/failure paths offscreen + variant persistence in the store; ⏳ visual check against a live provider |
 | Context file attachments | ✅ document extraction (no model call), image JPEG re-encode, stubbed vision transcription and save flow offscreen; ⏳ a real model transcribing a photographed page |
 | Translations (i18n) | ✅ catalog/fallback/placeholder tests, offscreen German retranslation; ⏳ native-speaker review of the German values |
-| Linux system audio (`parec`) | ✅ verified live on PipeWire: `stt_smoke.py --capture 16 --source system` recorded the speaker monitor and transcribed the JFK clip **word-perfect** (8 partial updates, VAD gate intact); `pactl` parsing/device ids unit-tested |
 | Server security policy | ✅ HMAC-hashed OTPs (`compare_digest`), per-email send cooldown, attempt cap, JWT claim validation; non-loopback binds refuse to start with the default secret or the dev OTP echo; CORS off unless configured; client stores written owner-only; unit-tested |
-| Wayland screenshots (portal) | ✅ verified live on GNOME 51/Wayland: the portal returns a 2880×1800 pixmap (DPR 2.0) and its file is removed afterwards; the frozen-selector crop math is unit-tested (scale, multi-monitor offset, null background); ⏳ your own walkthrough in [`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md) |
-| Wayland hotkeys (GlobalShortcuts portal) | ✅ request/response plumbing and trigger conversion (`ALT+SHIFT+a`) unit-tested, `CreateSession` verified live; the portal refuses app-id-less launches, which the manager detects and reports; ⏳ end-to-end binding from the launcher entry (desktop confirmation dialog) |
-| X11 hotkeys (`XGrabKey` via `libX11`) | ✅ verified live against XWayland: grabs accepted, invalid specs and conflicts rejected cleanly, `XSync` error snap-back unit-tested with a fake grabber; ⏳ a native X11 session |
 | Interface scale / hi-DPI | ✅ setting plumb-through + DPR-aware thumbnails; ⏳ visual review at 125–200 % |
 | Pixel polish (states, scrollbars, tabs) | ✅ hover/focus/checked styles, themed scrollbars and tooltips, tabbed settings — offscreen construction tests; ⏳ visual pass on Windows at 100–150 % |
-| One-command launchers | ✅ `run.sh`: real venv check, server start, health wait, clean shutdown; ⏳ `run.ps1` on Windows |
-| Packaged bundle (PyInstaller + CI) | ✅ Linux one-folder build of the same spec: server healthy from the exe, `--check-render` OK, vendor assets + QtWebEngine bundled, Chromium locales trimmed to `en-US`; the release workflow also builds that bundle as a Linux tarball with the `.desktop` launcher and `install-linux.sh`; ⏳ hands-on Windows pass with the CI-built zip |
+| One-command launcher | ⏳ `run.ps1` on Windows: venv check, server start, health wait, clean shutdown |
+| Packaged bundle (PyInstaller + CI) | ✅ the PyInstaller spec, vendored assets and the `--check-render` self-test were exercised in a one-folder build; the release workflow builds the Windows bundle and installer on release tags; ⏳ hands-on Windows pass with the CI-built zip |
 | Windows installer (Inno Setup, per-user) | ✅ CI compiles and attaches `…-setup.exe` on release tags; per-user layout, shortcuts, uninstaller and license page are declarative; ⏳ install → launch → upgrade → uninstall on real Windows |
 | TLS trust-store fallback + classified connection errors | ✅ unit tests: a certificate error is retried once against the OS-store ∪ certifi bundle on all three transports, then reported as a TLS diagnostic; DNS/refused/handshake failures get distinct messages; ⏳ a real corporate-proxy/antivirus environment |
 | GUI flows (offscreen Qt) | ✅ construction, streaming, hotkey wiring, teardown |
 | WASAPI loopback capture (pyaudiowpatch, Windows-only) | ⏳ run `stt_smoke.py --capture 8 --source system` |
-| Native hotkeys (`RegisterHotKey`, Windows-only) | ✅ all 15 defaults parse and register as Qt fallbacks on Linux; native path needs Windows |
+| Native hotkeys (`RegisterHotKey`) | ✅ all 15 defaults parse and validate; ⏳ native registration on Windows |
 | Stealth (`WDA_EXCLUDEFROMCAPTURE`, Windows-only) | ⏳ verify with a screen-share |
 | Deepgram engine | ⏳ needs an API key (`stt_engine=deepgram`) |
 | Real model provider | ✅ any OpenAI-compatible endpoint (mock used in CI; point `.env` at your provider) |
@@ -626,10 +601,9 @@ runs the core suite as a first line of defence.
 - [x] Optional WebSocket chat transport (auto-upgrade, SSE fallback, cancellation).
 - [x] Session export to Markdown (one session, all sessions, clipboard).
 - [x] Translation layer with drop-in JSON catalogs (English + German shipped).
-- [x] Linux system-audio loopback via PulseAudio/PipeWire monitor sources.
 - [x] Interface scale setting + hi-DPI thumbnails, tabbed settings, themed controls.
-- [x] Windows/Linux parity: Wayland portal screenshots, X11 `XGrabKey` + portal hotkeys, frozen region selection, Linux release artifact.
 - [x] Click-through mode, collapsed-answer streaming preview, startup pre-warm and fluid animations.
+- [x] Focused Windows-only scope: stealth is the product, so unsupported platforms are no longer shipped or documented.
 - [x] Per-user Windows installer (Inno Setup, no admin prompt) with app icon, built by CI on release tags.
 - [x] OS-trust-store TLS fallback (corporate proxies / antivirus roots) with classified connection errors; history sessions auto-titled.
 - [ ] Verify and iterate the Windows bundle and installer on real hardware (CI builds both on tags).

@@ -35,12 +35,12 @@ python tools/collect_strings.py --check     # translation catalog is in sync
 python tests/e2e/run_e2e.py                 # real server + mock LLM over SSE and WebSocket
 ```
 
-CI runs the same gates on Linux (Python 3.10 and 3.13) and Windows (3.12).
+CI runs the unit suite on Linux (Python 3.10 and 3.13) for the portable
+modules, and on Windows (3.12) where the shipped client runs.
 `tests/test_client_ui.py`, `tests/test_client_webview.py` and
 `tests/test_client_hotkeys.py` need a full Qt/WebEngine stack and stay
 informational on CI until they have been exercised on real hardware — see
-[`docs/WINDOWS-CHECKLIST.md`](docs/WINDOWS-CHECKLIST.md) and
-[`docs/LINUX-CHECKLIST.md`](docs/LINUX-CHECKLIST.md).
+[`docs/WINDOWS-CHECKLIST.md`](docs/WINDOWS-CHECKLIST.md).
 
 ## Translations
 
@@ -72,5 +72,5 @@ pyinstaller packaging/opengirgit.spec --noconfirm --distpath dist --workpath bui
   `docs: …`, `test(scope): …`, `ci: …`.
 - Keep pull requests focused, and update the docs and tests your change
   affects.
-- Bug reports are most useful when they include the platform, the exact
+- Bug reports are most useful when they include the Windows version, the exact
   command used, and what happened instead of what you expected.

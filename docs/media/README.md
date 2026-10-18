@@ -7,7 +7,7 @@
 | `opengirgit-demo-poster.jpg` | poster frame for the README embed (still at 12.8 s) |
 
 The app icon lives in [`packaging/org.opengirgit.OpenGirGit.svg`](../packaging/org.opengirgit.OpenGirGit.svg)
-(the **OG** monogram — one source for the Linux icon and the Windows `.ico`; see
+(the **OG** monogram — the source for the Windows `.ico`; see
 [`packaging/README.md`](../packaging/README.md#icon)).
 
 ## Music credit
