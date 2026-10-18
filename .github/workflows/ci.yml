@@ -35,10 +35,10 @@ jobs:
         run: pytest -q
 
   windows-tests:
-    # The client is Windows-first (WASAPI loopback, RegisterHotKey, capture
-    # exclusion). Installing the real client requirements here also verifies
-    # that the Windows install path (PyAudioWPatch wheels etc.) works; the
-    # platform-independent suite is a hard gate, while the Qt/WebEngine GUI
+    # Windows is the only supported target (WASAPI loopback, RegisterHotKey,
+    # capture exclusion). Installing the real client requirements here also
+    # verifies that the Windows install path (PyAudioWPatch wheels etc.) works;
+    # the platform-independent suite is a hard gate, while the Qt/WebEngine GUI
     # tests stay informational until they have been checked on real hardware
     # (docs/WINDOWS-CHECKLIST.md).
     runs-on: windows-latest

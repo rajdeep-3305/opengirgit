@@ -29,7 +29,7 @@ Useful defaults set by the launcher:
 
 | Variable | Default when unset |
 |---|---|
-| `DATA_DIR` | `%LOCALAPPDATA%\OpenGirGit\data` (Windows), `~/.local/share/opengirgit/data` elsewhere |
+| `DATA_DIR` | `%LOCALAPPDATA%\OpenGirGit\data` |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` |
 | `OPENGIRGIT_SERVER_URL` | `http://HOST:PORT` |
 
@@ -51,30 +51,9 @@ installer is **not code-signed** — Windows SmartScreen will warn once, "More
 info → Run anyway" is expected. Release tags build and attach it automatically;
 re-running a newer installer upgrades in place.
 
-## Linux bundle
-
-The same spec builds on Linux (`dist/OpenGirGit/OpenGirGit`, one folder; CI
-attaches it as `OpenGirGit-linux-x64.tar.gz` on release tags). Unpack and run
-
-```sh
-./OpenGirGit/install-linux.sh          # registers the launcher entry + icon
-```
-
-The install script is what makes **global hotkeys work on Wayland**: the
-GlobalShortcuts portal scopes bindings to an app id, which the desktop derives
-from the systemd scope of a grid-launched app plus the installed `.desktop`
-file. Launch OpenGirGit from the application grid afterwards; terminal launches
-keep window-local shortcuts (the settings dialog shows which backend is
-active). For a source checkout the same trick works when systemd is present:
-
-```sh
-systemd-run --user --scope -u app-org.opengirgit.OpenGirGit-$$ ./run.sh
-```
-
 ## Icon
 
-`org.opengirgit.OpenGirGit.svg` is the single source for the app mark (shipped
-as-is by `install-linux.sh` into `hicolor/scalable/apps`).
+`org.opengirgit.OpenGirGit.svg` is the single source for the app mark.
 `OpenGirGit.ico` is the Windows multi-size icon used by the PyInstaller spec and
 the installer — regenerate it from the SVG whenever the mark changes:
 
@@ -90,9 +69,8 @@ magick icon-16.png icon-24.png icon-32.png icon-48.png icon-64.png \
 ## Notes and caveats
 
 * **Size.** The folder is large (PySide6 + QtWebEngine + faster-whisper/ctranslate2
-  + numpy): a few hundred MB on Windows, ~1.1 GB in our Linux verification build
-  (`libQt6WebEngineCore.so` alone is ~190 MB). This is the price of offline STT
-  and the offline math/diagram renderer. KaTeX + mermaid add only ~3 MB, the
+  + numpy): a few hundred MB. This is the price of offline STT and the offline
+  math/diagram renderer. KaTeX + mermaid add only ~3 MB, the
   translation catalogs a few KB; the spec drops Chromium's locale paks except
   `en-US.pak` (~40 MB saved). Set `OPENGIRGIT_WEB_RENDER=false` to skip creating
   the embedded browser at run time (the files stay in the bundle either way).
@@ -116,9 +94,3 @@ magick icon-16.png icon-24.png icon-32.png icon-48.png icon-64.png \
   on every release tag (see `.github/workflows/release.yml`, which also has a
   manual *Run workflow* trigger), and the hands-on pass is scripted in
   [`docs/WINDOWS-CHECKLIST.md`](../docs/WINDOWS-CHECKLIST.md).
-* **Linux bundle.** Built and smoke-tested on this machine (Ubuntu 24.04,
-  Wayland): server healthy from the executable, `--check-render` OK, portal
-  capture and X11 grabs work from the frozen build. CI builds it on
-  ubuntu-22.04 for an older glibc baseline; the release workflow runs the same
-  health smoke test. Hands-on pass:
-  [`docs/LINUX-CHECKLIST.md`](../docs/LINUX-CHECKLIST.md).
