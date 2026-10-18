@@ -45,17 +45,17 @@ PYGMENTS_STYLE = "monokai"
 
 #: Extra CSS applied to the answer document (dark theme, matches the overlay).
 _DARK_CSS = """
-body { color: #f2f2f2; background-color: transparent; }
+body { color: #ececf1; background-color: transparent; }
 h1, h2, h3, h4 { color: #ffffff; }
-a { color: #7ab7ff; }
+a { color: #58a6ff; }
 code { font-family: Consolas, "Courier New", monospace; background-color: #2c2c2c;
-       color: #f8f8f2; }
-pre { font-family: Consolas, "Courier New", monospace; background-color: #272822;
-      color: #f8f8f2; }
-blockquote { color: #c9c9c9; }
+       color: #e6edf3; }
+pre { font-family: Consolas, "Courier New", monospace; background-color: #0d1117;
+      color: #e6edf3; }
+blockquote { color: #c9d1d9; }
 table { border-collapse: collapse; }
-th, td { border: 1px solid #555555; padding: 3px 7px; }
-hr { color: #555555; }
+th, td { border: 1px solid #30363d; padding: 6px 9px; }
+hr { color: #30363d; }
 """
 
 #: CSS for documents shown on a standard light palette (e.g. the history dialog).

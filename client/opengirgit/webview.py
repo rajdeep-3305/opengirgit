@@ -25,7 +25,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 #: Page background, matching the overlay's answer panel.
-PANEL_BACKGROUND = "#1a1a1a"
+PANEL_BACKGROUND = "#2a2a2a"
 
 _TEMPLATE = """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -35,27 +35,61 @@ _TEMPLATE = """<!DOCTYPE html>
 <script src="katex/auto-render.min.js"></script>
 <script src="mermaid/mermaid.min.js"></script>
 <style>
-  html { background-color: #1a1a1a; }
-  body { background-color: #1a1a1a; color: #f2f2f2; margin: 0;
-         font-family: "Segoe UI", Ubuntu, Cantarell, "Noto Sans", sans-serif;
-         font-size: 13px; line-height: 1.45; padding: 8px 10px; }
-  h1, h2, h3, h4 { color: #ffffff; margin: 10px 0 4px; }
-  a { color: #7ab7ff; }
-  code { font-family: Consolas, "Courier New", monospace; background-color: #2c2c2c;
-         color: #f8f8f2; padding: 1px 3px; border-radius: 3px; }
-  pre { font-family: Consolas, "Courier New", monospace; background-color: #272822;
-        color: #f8f8f2; padding: 8px; border-radius: 5px; overflow-x: auto; }
-  pre code { background: transparent; padding: 0; }
-  blockquote { color: #c9c9c9; border-left: 3px solid #555555; margin-left: 4px;
-               padding-left: 8px; }
-  table { border-collapse: collapse; }
-  th, td { border: 1px solid #555555; padding: 3px 7px; }
-  hr { border-color: #555555; }
-  .arithmatex { max-width: 100%; overflow-x: auto; }
-  .mermaid { margin: 6px 0; text-align: center; }
+  ::-webkit-scrollbar { display: none; }
+  * { cursor: default !important; }
+  html { background-color: #2a2a2a; }
+  body { background-color: #2a2a2a; color: #ececf1; margin: 0;
+         font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+         font-size: 15px; line-height: 1.65; padding: 10px;
+         max-width: 100%; word-wrap: break-word; overflow-anchor: none;
+         -webkit-font-smoothing: antialiased; }
+  #content > *:first-child { margin-top: 0 !important; }
+  h1, h2, h3, h4, h5, h6 { color: #ffffff; font-weight: 600;
+                           line-height: 1.3; margin: 20px 0 12px; }
+  h1 { font-size: 1.7em; border-bottom: 1px solid #30363d; padding-bottom: 0.3em; }
+  h2 { font-size: 1.4em; border-bottom: 1px solid #2a2f37; padding-bottom: 0.25em; }
+  h3 { font-size: 1.2em; }
+  h4 { font-size: 1.05em; }
+  h5, h6 { font-size: 1em; color: #c9d1d9; }
+  p { margin: 0 0 14px; }
+  strong, b { font-weight: 600; color: #ffffff; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul, ol { margin: 0 0 14px; padding-left: 26px; }
+  li { margin: 5px 0; }
+  li > p { margin: 0 0 6px; }
+  code { font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+         font-size: 0.92em; background-color: rgba(110, 118, 129, 0.18);
+         color: #e6edf3; padding: 0.15em 0.4em; border-radius: 5px; }
+  pre { background-color: #0d1117; color: #e6edf3; padding: 14px 16px;
+        border-radius: 8px; white-space: pre-wrap; word-wrap: break-word;
+        overflow-x: auto; tab-size: 4; font-size: 0.9em; line-height: 1.55;
+        border: 1px solid #30363d; margin: 0 0 16px;
+        font-family: "Cascadia Code", Consolas, "Courier New", monospace; }
+  pre code { background-color: transparent; padding: 0; border: none;
+             color: inherit; font-size: inherit; font-family: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 16px;
+          font-size: 0.95em; display: block; overflow-x: auto; }
+  th { font-weight: 600; background-color: #161b22; border: 1px solid #30363d;
+       padding: 8px 12px; text-align: left; }
+  td { border: 1px solid #30363d; padding: 8px 12px; }
+  tr:nth-child(2n) { background-color: rgba(110, 118, 129, 0.06); }
+  blockquote { padding: 0.4em 1em; color: #c9d1d9;
+               border-left: 3px solid #3b82f6;
+               background: rgba(56, 139, 253, 0.08);
+               border-radius: 0 6px 6px 0; margin: 0 0 16px; }
+  blockquote p:last-child { margin-bottom: 0; }
+  hr { height: 1px; padding: 0; margin: 20px 0; background-color: #30363d;
+       border: 0; }
+  .mermaid { background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+             padding: 14px; margin: 0 0 16px; text-align: center;
+             overflow-x: auto; }
+  .mermaid svg { max-width: 100%; height: auto; }
   .mermaid pre { text-align: left; }
-  ::-webkit-scrollbar { width: 10px; height: 10px; background: #1a1a1a; }
-  ::-webkit-scrollbar-thumb { background: #555555; border-radius: 5px; }
+  .arithmatex { max-width: 100%; overflow-x: auto; }
+  .katex { color: #ffffff; font-size: 1.05em; }
+  .katex-display { margin: 1em 0; text-align: center;
+                   overflow-x: auto; overflow-y: hidden; }
 </style>
 </head><body><div id="content"></div>
 <script>
