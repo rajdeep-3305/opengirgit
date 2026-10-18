@@ -22,9 +22,20 @@ pip install -r server/requirements.txt -r client/requirements.txt
 pip install pytest ruff
 ```
 
-You do not need a paid API key for development: run a local model behind an
-OpenAI-compatible API (for example Ollama) and point the bundled server at it.
-The "Quick start" section of the README walks through the zero-key setup.
+You do not need a paid API key for development. Run a local model behind an
+OpenAI-compatible API (for example Ollama), copy `server/.env.example` to
+`server/.env`, and set:
+
+```ini
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_API_KEY=ollama
+LLM_CHAT_MODEL=llama3.1:8b
+LLM_VISION_MODEL=llava:latest
+```
+
+The [simple setup guide](docs/SETUP.md) walks through the same zero-key flow for
+the installed app, and [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) lists
+every server and client setting.
 
 ## Before you open a pull request
 
@@ -34,6 +45,9 @@ ruff check server client tests packaging tools
 python tools/collect_strings.py --check     # translation catalog is in sync
 python tests/e2e/run_e2e.py                 # real server + mock LLM over SSE and WebSocket
 ```
+
+The full test map, latency numbers and current verification status live in
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 
 CI runs the unit suite on Linux (Python 3.10 and 3.13) for the portable
 modules, and on Windows (3.12) where the shipped client runs.

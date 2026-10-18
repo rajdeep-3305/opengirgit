@@ -90,8 +90,8 @@ ollama pull llava
 
 If your computer is slow, use OpenAI, OpenRouter or any “OpenAI-compatible”
 provider: create the same `.env` file with that provider's address, API key and
-model name — see [Server environment](../README.md#server-environment) in the
-main README. The app itself is always free; the provider bills you directly.
+model name — see [Server environment](CONFIGURATION.md#server-environment). The
+app itself is always free; the provider bills you directly.
 
 ## 4. Quick tour (30 seconds)
 
@@ -134,6 +134,7 @@ main README. The app itself is always free; the provider bills you directly.
 
 ---
 
-*Technical reader? The [main README](../README.md) covers running from source,
-advanced configuration and the full hotkey list. The
+*Technical reader? [CONTRIBUTING.md](../CONTRIBUTING.md) covers running from
+source, [CONFIGURATION.md](CONFIGURATION.md) lists every setting, and the
+[main README](../README.md) has the full hotkey list. The
 [Windows checklist](WINDOWS-CHECKLIST.md) goes deeper.*
