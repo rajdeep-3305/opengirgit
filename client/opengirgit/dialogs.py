@@ -614,9 +614,6 @@ class SettingsDialog(QDialog, _WorkerOwner):
             state, detail = self._hotkey_state
             status_text = {
                 "windows": tr("global hotkeys: system-wide"),
-                "x11": tr("global hotkeys: system-wide (X11)"),
-                "portal": tr("global hotkeys: waiting for the desktop to confirm"),
-                "portal-ready": tr("global hotkeys: system-wide (desktop portal)"),
                 "focus": tr("global hotkeys: only while this window has focus"),
             }.get(state, tr("global hotkeys: only while this window has focus"))
             if detail:

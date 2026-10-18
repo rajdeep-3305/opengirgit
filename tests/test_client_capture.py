@@ -129,35 +129,10 @@ def test_emitted_rectangle_captures_after_the_drag_state_is_cleared(qt_app):
     assert pixmap.toImage().pixelColor(100, 100) == color
 
 
-# -- pre-capture backends --------------------------------------------------- #
+# -- pre-capture backend ---------------------------------------------------- #
 
 
-def test_portal_capture_needed_follows_the_session_type(qt_app, monkeypatch):
-    monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
-    assert capture.portal_capture_needed() is True
-    monkeypatch.setenv("XDG_SESSION_TYPE", "x11")
-    assert capture.portal_capture_needed() is False  # offscreen platform plugin
-
-
-def test_desktop_pixmap_prefers_the_portal_on_wayland(qt_app, monkeypatch):
-    sentinel = _background(20, 10)
-    monkeypatch.setattr(capture, "portal_capture_needed", lambda: True)
-    monkeypatch.setattr(capture, "portal_screenshot", lambda: sentinel)
-    assert capture.desktop_pixmap() is sentinel
-    assert capture.last_capture_error() == ""
-
-
-def test_desktop_pixmap_falls_back_to_a_native_grab(qt_app, monkeypatch):
-    monkeypatch.setattr(capture, "portal_capture_needed", lambda: True)
-    monkeypatch.setattr(capture, "portal_screenshot", lambda: None)
-    monkeypatch.setattr(capture, "grab_screen_region", lambda rect, screen=None: QPixmap(8, 6))
-    pixmap = capture.desktop_pixmap()
-    assert pixmap is not None and not pixmap.isNull()
-    assert capture.last_capture_error() == ""
-
-
-def test_native_fallback_grabs_the_virtual_desktop(qt_app, monkeypatch):
-    """The native fallback must match the portal's frame of reference."""
+def test_desktop_pixmap_grabs_the_virtual_desktop(qt_app, monkeypatch):
     from PySide6.QtGui import QGuiApplication
 
     screen = QGuiApplication.primaryScreen()
@@ -168,28 +143,14 @@ def test_native_fallback_grabs_the_virtual_desktop(qt_app, monkeypatch):
         rects.append(QRect(rect))
         return QPixmap(8, 6)
 
-    monkeypatch.setattr(capture, "portal_capture_needed", lambda: True)
-    monkeypatch.setattr(capture, "portal_screenshot", lambda: None)
     monkeypatch.setattr(capture, "grab_screen_region", fake_grab)
-    capture.desktop_pixmap()
+    pixmap = capture.desktop_pixmap()
+    assert pixmap is not None and not pixmap.isNull()
     assert rects == [screen.virtualGeometry()]
+    assert capture.last_capture_error() == ""
 
 
-def test_desktop_pixmap_reports_when_both_backends_fail(qt_app, monkeypatch):
-    monkeypatch.setattr(capture, "portal_capture_needed", lambda: True)
-    monkeypatch.setattr(capture, "portal_screenshot", lambda: None)
+def test_desktop_pixmap_reports_a_failed_grab(qt_app, monkeypatch):
     monkeypatch.setattr(capture, "grab_screen_region", lambda rect, screen=None: QPixmap())
     assert capture.desktop_pixmap() is None
     assert capture.last_capture_error()
-
-
-def test_portal_screenshot_reports_portal_errors(qt_app, monkeypatch):
-    from opengirgit import portal
-
-    class Broken:
-        def screenshot(self, timeout_ms=15000, keep_file=False):
-            raise portal.PortalError("the Screenshot portal is not available")
-
-    monkeypatch.setattr(portal, "PortalClient", Broken)
-    assert capture.portal_screenshot() is None
-    assert "not available" in capture.last_capture_error()

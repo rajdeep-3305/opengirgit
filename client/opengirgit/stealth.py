@@ -9,7 +9,7 @@ Uses only documented Win32 calls:
   from the taskbar and Alt-Tab.
 * optionally ``WS_EX_TRANSPARENT | WS_EX_LAYERED`` — click-through; off
   Windows the same toggle falls back to Qt's ``WindowTransparentForInput``
-  flag (X11/XWayland honour it; Wayland compositors vary).
+  flag (development only).
 
 The capture/taskbar helpers are no-ops on non-Windows platforms; the
 click-through toggle has the portable fallback above.
@@ -92,10 +92,9 @@ def set_click_through(widget: Any, enabled: bool) -> bool:
     """Let mouse events pass through the window when enabled.
 
     Windows flips ``WS_EX_TRANSPARENT | WS_EX_LAYERED`` on the native handle.
-    Everywhere else the portable ``Qt.WindowTransparentForInput`` flag is used;
-    changing window flags hides the widget, so a visible window is re-shown
-    right away (position is preserved on X11; some Wayland compositors may
-    re-place the window — the mode still works, the geometry just moves).
+    Everywhere else (development on unsupported platforms) the portable
+    ``Qt.WindowTransparentForInput`` flag is used; changing window flags hides
+    the widget, so a visible window is re-shown right away.
 
     Returns ``True`` when the toggle was applied.
     """

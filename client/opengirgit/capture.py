@@ -1,20 +1,16 @@
 """Screen-region selection and JPEG encoding for vision requests.
 
-Two capture flows:
-
 * **Live** (Windows): the selector overlay is transparent and the region is
   grabbed from the screen after the drag.  Windows excludes the overlay from
   captures (``stealth``), so the grab is clean.
-* **Frozen** (Linux, macOS): the screen is captured *before* the selector
-  opens and the selection simply crops that image.  This is required on
-  Wayland (``QScreen.grabWindow`` returns a null pixmap there, capture goes
-  through the portal) and avoids grabbing the dimming overlay on X11.
+* **Frozen** (other platforms, development): the screen is captured *before*
+  the selector opens and the selection simply crops that image, keeping the
+  dimming overlay out of the picture.
 """
 
 from __future__ import annotations
 
 import base64
-import os
 
 from PySide6.QtCore import QBuffer, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPixmap
@@ -59,10 +55,10 @@ class RegionSelector(QWidget):
         if screen is not None:
             self.setGeometry(screen.geometry())
 
-        # Frozen mode: ``background`` is a pre-capture of the screen (portal
-        # capture on Wayland, an early grab elsewhere) that the selection is
-        # cut out of.  ``background_origin``/``background_scale`` map widget
-        # (logical) coordinates onto its pixels.
+        # Frozen mode: ``background`` is a pre-capture of the screen (an early
+        # grab before the selector opens) that the selection is cut out of.
+        # ``background_origin``/``background_scale`` map widget (logical)
+        # coordinates onto its pixels.
         self._background = background if background is not None and not background.isNull() else None
         self._background_origin = QPoint(0, 0)
         self._background_scale_x = 1.0
@@ -281,53 +277,16 @@ def last_capture_error() -> str:
     return _last_capture_error
 
 
-def portal_capture_needed() -> bool:
-    """True when the native screen grab is not usable (Wayland sessions)."""
-    if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
-        return True
-    try:
-        return QGuiApplication.platformName().startswith("wayland")
-    except Exception:  # noqa: BLE001 - no GUI application
-        return False
-
-
-def portal_screenshot() -> QPixmap | None:
-    """Whole-desktop grab through the xdg-desktop-portal ("" on failure)."""
-    global _last_capture_error
-    from . import portal
-
-    try:
-        pixmap = portal.PortalClient().screenshot()
-    except portal.PortalError as exc:
-        _last_capture_error = str(exc)
-        return None
-    except Exception as exc:  # noqa: BLE001 - D-Bus surprises are not fatal
-        _last_capture_error = str(exc)
-        return None
-    if pixmap is None or pixmap.isNull():
-        _last_capture_error = "the portal returned no image"
-        return None
-    return pixmap
-
-
 def desktop_pixmap() -> QPixmap | None:
-    """Pre-capture the whole screen for the frozen selector flow.
-
-    Prefers the portal on Wayland (the only thing that works there) and falls
-    back to a native grab, e.g. on X11 without a portal.
-    """
+    """Pre-capture the whole screen for the frozen selector flow."""
     global _last_capture_error
     _last_capture_error = ""
     screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
     if screen is None:
         _last_capture_error = "no screen found"
         return None
-    if portal_capture_needed():
-        pixmap = portal_screenshot()
-        if pixmap is not None:
-            return pixmap
-    # Native fallback: grab the whole virtual desktop, matching the portal's
-    # frame of reference (the selector maps this against virtualGeometry()).
+    # Grab the whole virtual desktop; the selector maps this against
+    # virtualGeometry().
     virtual = screen.virtualGeometry()
     if virtual.width() > 0 and virtual.height() > 0:
         pixmap = grab_screen_region(virtual, screen)

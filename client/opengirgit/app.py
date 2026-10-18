@@ -196,10 +196,9 @@ class AppController(QObject):
             return
         background = None
         if not IS_WINDOWS:
-            # Linux/macOS capture before the overlay appears and let the
-            # selection crop the frozen image: Wayland only supports screen
-            # capture through the desktop portal, and on X11 this keeps the
-            # dimming overlay out of the picture.
+            # Unsupported platforms: capture before the overlay appears and let
+            # the selection crop the frozen image (keeps the dimming overlay
+            # out of the picture).
             background = desktop_pixmap()
             if background is None:
                 message = tr("could not capture the screen")
@@ -245,8 +244,8 @@ class AppController(QObject):
             return
         detail = self._hotkeys.backend_detail()
         if detail:
-            # Not user-facing on purpose: on Wayland the portal refuses
-            # terminal launches, which would nag on every start.
+            # Not user-facing on purpose: on unsupported platforms this is only
+            # the window-local fallback, which would nag on every start.
             print(f"opengirgit: global hotkeys are window-local ({detail})", flush=True)
 
     def _on_hotkey(self, action: str) -> None:
@@ -379,10 +378,6 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("OpenGirGit")
     app.setApplicationVersion(APP_VERSION)
-    # Matches packaging/org.opengirgit.OpenGirGit.desktop: on Wayland this is the
-    # window's app id, which is how the desktop ties the window (and the portal
-    # shortcut scope) to the launcher entry.
-    app.setDesktopFileName("org.opengirgit.OpenGirGit")
     app.setQuitOnLastWindowClosed(False)
 
     credentials = CredentialsStore()

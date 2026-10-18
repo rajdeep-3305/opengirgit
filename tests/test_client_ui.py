@@ -354,12 +354,6 @@ def test_settings_dialog_reports_the_hotkey_backend(qt_app):
     dialog.close()
     dialog.deleteLater()
 
-    portal = SettingsDialog(settings, hotkey_state=("portal-ready", ""))
-    labels = [label.text() for label in portal.findChildren(QLabel)]
-    assert any("system-wide (desktop portal)" in text for text in labels)
-    portal.close()
-    portal.deleteLater()
-
 
 class _ResumeCache:
     def __init__(self, tmp_path) -> None:
