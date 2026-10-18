@@ -61,8 +61,11 @@ downloads.
 
 ### 2. Sign in
 
-Type any email address — it is only the name of your local account, and no mail
-is sent. Click **Send code**; the code fills in automatically. Click **Sign in**.
+Use any email-shaped name (for example `me@example.com`) as your local username —
+it is not checked and nothing is sent to it. Click **Send code**. The local
+server generates the code and, because no email provider is configured, shows it
+in the app and the engine window; it fills in automatically. Then click
+**Sign in**.
 
 ### 3. Give it an AI model
 

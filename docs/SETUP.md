@@ -36,9 +36,10 @@ Windows 11.
 4. Start **OpenGirGit** from the Start menu. Two windows appear — keep both:
    * the **floating bar** (usually top-right): this is the app, it stays on top;
    * a **black text window**: the app's engine and log. Closing it quits the app.
-5. **Sign in**: type any email address (it's just your local account name —
-   no mail is sent), click **Send code** — the code fills in by itself — then
-   **Sign in**.
+5. **Sign in**: type any email-shaped name (for example `me@example.com`) as
+   your local username — it is not checked and no mail is sent. Click **Send
+   code**; the local server shows the code in the app and the engine window, and
+   it fills in automatically. Then click **Sign in**.
 
 ## 3. Give it a model to think with
 
