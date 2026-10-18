@@ -1,11 +1,7 @@
 # OpenGirGit
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/media/opengirgit-wordmark-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/media/opengirgit-wordmark-light.svg">
-    <img src="docs/media/opengirgit-wordmark-light.svg" alt="OpenGirGit" width="360">
-  </picture>
+  <img src="docs/media/opengirgit-lockup.png" alt="OpenGirGit" width="480">
 </p>
 
 An open-source **interview-copilot overlay**: it listens to the interviewer through
@@ -18,9 +14,9 @@ used by the commercial Windows app *GirGit AI*, written from observed behaviour
 published). It contains **no vendor code, no vendor keys, and no billing** — you
 run your own server, plug in your own model, and pay nobody.
 
-*Girgit* is Hindi for **chameleon** — which is what the icon shows: a little
-chameleon perched on a speech bubble. It doubles as the design brief, since this
-app knows how to stay out of a screen share.
+*Girgit* is Hindi for **chameleon** — which is what the logo shows: a little
+chameleon perched on a branch. It doubles as the design brief, since this app
+knows how to stay out of a screen share.
 
 > **New here — just want to install it?** There's a plain-language,
 > no-coding-needed **[install & setup guide](docs/SETUP.md)** for Windows and
