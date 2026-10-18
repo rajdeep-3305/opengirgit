@@ -35,6 +35,8 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; OpenGirGit supports Windows 11 only: build 22000 is the first Windows 11 release.
+MinVersion=10.0.22000
 UninstallDisplayIcon={app}\{#AppName}.exe
 LicenseFile=..\LICENSE
 SetupIconFile=OpenGirGit.ico

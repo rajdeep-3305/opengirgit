@@ -33,7 +33,7 @@ Useful defaults set by the launcher:
 | `HOST` / `PORT` | `127.0.0.1` / `8000` |
 | `OPENGIRGIT_SERVER_URL` | `http://HOST:PORT` |
 
-## Windows installer
+## Windows 11 installer
 
 `install-windows.iss` ([Inno Setup 6](https://jrsoftware.org/isinfo.php)) wraps
 the PyInstaller folder into `OpenGirGit-windows-x64-setup.exe`:
@@ -43,13 +43,14 @@ the PyInstaller folder into `OpenGirGit-windows-x64-setup.exe`:
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\install-windows.iss
 ```
 
-It installs **per user** (`PrivilegesRequired=lowest`): no UAC prompt, files in
+It installs **per user on Windows 11 (64-bit)** (`PrivilegesRequired=lowest`,
+`MinVersion=10.0.22000`): no UAC prompt, files in
 `%LOCALAPPDATA%\Programs\OpenGirGit`, start-menu entry, optional desktop icon,
 German + English wizard, MIT license shown before install, and a normal
-uninstaller. Runtime configuration is unchanged (`.env` next to the exe). The
-installer is **not code-signed** — Windows SmartScreen will warn once, "More
-info → Run anyway" is expected. Release tags build and attach it automatically;
-re-running a newer installer upgrades in place.
+uninstaller. Windows 10 is refused; runtime configuration is unchanged (`.env`
+next to the exe). The installer is **not code-signed** — Windows SmartScreen will
+warn once, "More info → Run anyway" is expected. Release tags build and attach it
+automatically; re-running a newer installer upgrades in place.
 
 ## Icon
 
