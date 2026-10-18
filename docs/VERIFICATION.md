@@ -1,8 +1,8 @@
 # Verification
 
 This page keeps the detailed test map, on-machine checks, latency numbers and
-the current verification status. Windows-specific hands-on checks are tracked in
-[WINDOWS-CHECKLIST.md](WINDOWS-CHECKLIST.md).
+the current verification status. Windows 11-specific hands-on checks are tracked
+in [WINDOWS-CHECKLIST.md](WINDOWS-CHECKLIST.md).
 
 ## Development checks
 

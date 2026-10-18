@@ -1,4 +1,4 @@
-# OpenGirGit — simple install guide (Windows)
+# OpenGirGit — simple install guide (Windows 11)
 
 No coding knowledge needed: you install the app like any other program, then
 point it at an AI model once. Total setup time: about 15 minutes, most of it
@@ -18,13 +18,12 @@ Open the **[latest release page](https://github.com/rajdeep-3305/opengirgit/rele
 
 | Your computer | Download this | What it is |
 |---|---|---|
-| Windows 10 2004+ / Windows 11 (64-bit) | `OpenGirGit-windows-x64-setup.exe` | installs like a normal program |
-| Windows, if you can't run installers | `OpenGirGit-windows-x64.zip` | unpack anywhere, run `OpenGirGit.exe` inside |
+| Windows 11 (64-bit) | `OpenGirGit-windows-x64-setup.exe` | installs like a normal program |
+| Windows 11, if you can't run installers | `OpenGirGit-windows-x64.zip` | unpack anywhere, run `OpenGirGit.exe` inside |
 
-Almost every PC made after 2010 is 64-bit. OpenGirGit needs **Windows 10
-version 2004 (build 19041) or newer**, because screen-share invisibility uses
-the capture-exclusion API added in that release. Linux and macOS are not
-supported — stealth is the point of the app, and it is Windows-only.
+OpenGirGit needs **Windows 11 (64-bit)**. Windows 10, Linux and macOS are not
+supported — stealth is the point of the app, and the supported capture path is
+Windows 11.
 
 ## 2. Install
 

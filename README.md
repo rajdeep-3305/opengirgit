@@ -4,8 +4,6 @@
   <img src="docs/media/opengirgit-hero.png" alt="OpenGirGit — stay in the room, not in the share" width="100%">
 </p>
 
-<p align="center"><sub>Interface mock-up: the overlay listening, with a streamed answer.</sub></p>
-
 An open-source **interview-copilot overlay**: it listens to the interviewer through
 your speakers, transcribes speech in real time, and streams AI answers into a
 small always-on-top panel that you can keep out of screen shares.
@@ -31,20 +29,9 @@ run your own server, plug in your own model, and pay nobody.
 
 ---
 
-## Install
-
-**Windows 10 2004+ / Windows 11 (64-bit) only.** Download the latest
-`OpenGirGit-windows-x64-setup.exe` (or the portable zip) from
-[Releases](https://github.com/rajdeep-3305/opengirgit/releases/latest), then follow
-the plain-language [setup guide](docs/SETUP.md) — install, point it at a free
-local model, done.
-
-Building from source, self-hosting, or checking verification? See
-[`CONTRIBUTING.md`](CONTRIBUTING.md), [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)
-and [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
-
 ## Table of contents
 
+- [Install](#install)
 - [Features](#features)
 - [What is *not* in this repo](#what-is-not-in-this-repo)
 - [Platform support](#platform-support)
@@ -54,23 +41,110 @@ and [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 
 ---
 
+## Install
+
+OpenGirGit runs on **Windows 11 (64-bit)**. You do not need Python, Git, or a
+paid account to use the installer; setup takes about 15 minutes, mostly
+downloads.
+
+### 1. Download and install
+
+1. Open the [latest release](https://github.com/rajdeep-3305/opengirgit/releases/latest).
+2. Download `OpenGirGit-windows-x64-setup.exe`. If you cannot run installers,
+   download the portable `.zip` and unpack it instead.
+3. Run the file. If Windows shows **“Windows protected your PC”**, click
+   **More info → Run anyway** — the app is unsigned, so this warning is expected.
+4. Click **Next → Install**. It installs for your user only, so no admin
+   password is needed.
+5. Start **OpenGirGit** from the Start menu. Keep both windows open: the floating
+   bar and the black engine window. Closing the black window quits the app.
+
+### 2. Sign in
+
+Type any email address — it is only the name of your local account, and no mail
+is sent. Click **Send code**; the code fills in automatically. Click **Sign in**.
+
+### 3. Give it an AI model
+
+The app needs a model to answer with. The free, private option runs on your PC
+with [Ollama](https://ollama.com/download).
+
+**a) Install Ollama.** Download and run it from <https://ollama.com/download>.
+It stays quietly in the background.
+
+**b) Download a model.** Open **PowerShell** (Start → type “PowerShell” → Enter)
+and run:
+
+```powershell
+ollama pull llama3.1:8b
+```
+
+*On a lighter laptop, use `ollama pull llama3.2:3b` and put that name in the file
+below instead.*
+
+**c) Point OpenGirGit at it.** Copy this whole block into PowerShell and press
+Enter:
+
+```powershell
+@"
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_API_KEY=ollama
+LLM_CHAT_MODEL=llama3.1:8b
+LLM_VISION_MODEL=llava
+"@ | Set-Content "$env:LOCALAPPDATA\Programs\OpenGirGit\.env"
+```
+
+If you used the portable zip or installed somewhere else, save the same content
+as `.env` next to `OpenGirGit.exe`.
+
+**d) Screenshot answers (optional).** Download the vision model once:
+
+```powershell
+ollama pull llava
+```
+
+**e) Restart OpenGirGit.**
+
+Prefer a cloud model? Put your provider's URL, API key and model name in the
+same `.env` file — see [configuration](docs/CONFIGURATION.md#server-environment).
+The app is free; the provider bills you directly.
+
+### 4. Set up for the interview
+
+1. Open **Settings → Speech**, choose **System audio (interviewer)** under
+   **Audio device to listen to**, and play a video to check the transcript. The
+   first time, a small speech model (~150 MB) downloads.
+2. Open **Settings → Server → Test connection**. It should say
+   `Server is ok. LLM configured: yes.`
+3. When the interview-info dialog opens, fill in the company, job description
+   and resume. They are sent with every question for that session.
+4. Join the call and keep the floating bar open. On Windows 11 the overlay is
+   excluded from screen shares.
+5. Use the panel or the hotkeys: `Shift+Alt+A` ask, `Shift+Alt+S` screenshot,
+   `Shift+Alt+H` collapse, `Shift+Alt+C` click-through.
+
+Full walkthrough and fixes: [setup guide](docs/SETUP.md). Building from source,
+self-hosting, or checking verification? See [`CONTRIBUTING.md`](CONTRIBUTING.md),
+[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md), and
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+
 ## Features
 
-| Area | What OpenGirGit does |
+| Feature | What it does |
 |---|---|
-| **Speech input** | Captures **system audio loopback** through WASAPI — or a regular microphone — and resamples everything to 16 kHz mono. |
-| **Transcription** | **Local** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by default (nothing leaves your machine), or **Deepgram** streaming over a direct WebSocket using a short-lived token minted by *your* server. The local engine also fills the box **while the speaker is talking** (re-transcribes every ~1.2 s, with adaptive back-off on slow machines). |
-| **Answers** | Streaming chat from any **OpenAI-compatible** endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM…), over **SSE** or the optional **WebSocket** transport (auto, with SSE fallback). Answers render as streaming Markdown with **syntax-highlighted code blocks**, tables, **LaTeX math** (KaTeX) and **mermaid diagrams** — rendered by a bundled, fully offline web view (no CDN). The `code:` combo rewrites the shown answer's code in the picked language and **caches each variant per answer**. |
-| **Vision** | Hotkey → select a screen region. Each selection is **queued as a removable thumbnail**, so several regions (up to 5, e.g. a problem statement and its examples) can be attached to one question; the next question you type, speak or Ask carries them to a vision-capable model ("solve the coding problem on screen"). |
-| **Context** | Resume (PDF/DOCX/TXT), company, job description and free-form notes are formatted into a context block that is attached to every request. The JD and notes boxes also accept **attached files**: documents are text-extracted locally (never uploaded), images are transcribed by the vision model and folded in. |
-| **History** | Conversation history is stored **locally** in `~/.opengirgit/`, browsable in a dialog (sessions are named after their first question), navigable with hotkeys, and **exportable to Markdown** (one session or all of it, or straight to the clipboard). |
-| **Overlay UX** | Frameless, always-on-top, translucent, draggable bar with a short slide animation for collapse/expand and a startup fade; **click-through mode** (the mouse works through the overlay to the app underneath — `Shift+Alt+C` returns control); a **streaming preview popup** teases the answer while the panel is collapsed; tabbed settings (Server / Speech / Behaviour / Hotkeys); opacity and move hotkeys; resize grip; hi-DPI-aware thumbnails and an optional **interface scale** for 100–200 % sessions. |
-| **Hotkeys** | 15 global actions, editable **in the settings dialog** (empty value disables one) with validation. |
-| **Languages** | The interface ships an offline translation layer (English + German today) with `auto` following the desktop locale; adding a language is dropping one JSON file in [`client/opengirgit/translations/`](client/opengirgit/translations/README.md) — no Qt/`.qm` toolchain needed. |
-| **Stealth** | The windows are excluded from capture (`SetWindowDisplayAffinity`, `WDA_EXCLUDEFROMCAPTURE`) and hidden from the taskbar/Alt-Tab. During region selection the real cursor is blanked and a stand-in copy stays parked at the anchor, so a screen share sees an ordinary motionless cursor. |
-| **Auth** | Local email-OTP accounts issued by your own server (SMTP optional — dev mode prints the code). |
-| **Packaging** | `run.ps1` bootstraps everything with one command; CI builds a PyInstaller **one-folder Windows build** (client + server in one exe) and a **per-user installer** (Inno Setup, no admin prompt, German + English wizard) on release tags. |
-| **Zero billing** | There is no payment code, no minute accounting and no phone-home anywhere in this repository. |
+| **Speech input** | Captures system audio (WASAPI loopback) or a microphone. |
+| **Transcription** | Local faster-whisper with live partials, or optional Deepgram streaming. |
+| **Answers** | Streams Markdown, code, tables, LaTeX math and mermaid from any OpenAI-compatible model. |
+| **Vision** | Attaches up to five screen regions to a question. |
+| **Context** | Adds company, job description, resume and notes to every request. |
+| **History** | Keeps sessions locally, with hotkey navigation and Markdown export. |
+| **Overlay** | Always-on-top panel with click-through, opacity, resizing and UI scaling. |
+| **Hotkeys** | 15 global actions, remappable in Settings. |
+| **Languages** | Offline English + German UI; add a language with one JSON file. |
+| **Stealth** | Capture exclusion, taskbar/Alt-Tab hiding and a decoy cursor. |
+| **Auth** | Local email-OTP accounts on your own server. |
+| **Packaging** | One-command launcher, Windows bundle and per-user installer. |
+| **Zero billing** | No payments, minute accounting or phone-home. |
 
 ## What is *not* in this repo
 
@@ -83,12 +157,12 @@ and [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 
 ## Platform support
 
-OpenGirGit targets **Windows 10 2004+ / Windows 11 (64-bit)** only. Stealth is
-the point of the product, and Win32 capture exclusion is the only supported way
-to get it. Linux and macOS are out of scope: there are no builds, no install
+OpenGirGit targets **Windows 11 (64-bit)** only. Stealth is the point of the
+product, and Win32 capture exclusion is the only supported way to get it.
+Windows 10, Linux and macOS are out of scope: there are no builds, no install
 guides, and no support claims for them.
 
-| Capability | Windows |
+| Capability | Windows 11 |
 |---|---|
 | Overlay, dialogs, streaming answers | ✅ |
 | Region screenshots | ✅ native grab |
@@ -127,10 +201,8 @@ suppressed for the tap-style actions:
 * **Screen-share invisibility.** Every OpenGirGit window calls
   `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`, which excludes it
   from `BitBlt`-style capture used by Zoom/Teams/Meet, and sets
-  `WS_EX_TOOLWINDOW` so it stays out of the taskbar and Alt-Tab. This needs
-  Windows 10 version 2004 (build 19041) or newer; on older builds the flag
-  degrades and the window appears as a black rectangle in shares. Unsupported
-  platforms have no capture exclusion at all; do not rely on stealth there.
+  `WS_EX_TOOLWINDOW` so it stays out of the taskbar and Alt-Tab. Supported on
+  Windows 11 (64-bit) only; do not rely on stealth on any other platform.
 * **Decoy cursor (`decoy_cursor=true`).** While you drag the screenshot region,
   the real pointer is blanked on the selection overlay and a stand-in copy
   (the actual system cursor bitmap on Windows, read via GDI) stays parked at

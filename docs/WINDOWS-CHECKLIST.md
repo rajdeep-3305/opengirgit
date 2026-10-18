@@ -1,10 +1,11 @@
-# Windows verification checklist
+# Windows 11 verification checklist
 
-Everything in `README.md` → *Verification status* that is still marked **⏳** is
-either Windows-only (WASAPI loopback, `RegisterHotKey`, `WDA_EXCLUDEFROMCAPTURE`,
-the GDI decoy cursor, `run.ps1`, the packaged exe, the installer) or needs a
-screen share to judge. This file is the script for that pass: work top to
-bottom, tick what passes, and report what does not (see *Reporting* at the end).
+Everything in [`VERIFICATION.md`](VERIFICATION.md) → *Verification status* that
+is still marked **⏳** is either Windows-only (WASAPI loopback,
+`RegisterHotKey`, `WDA_EXCLUDEFROMCAPTURE`, the GDI decoy cursor, `run.ps1`, the
+packaged exe, the installer) or needs a screen share to judge. This file is the
+script for that pass: work top to bottom, tick what passes, and report what does
+not (see *Reporting* at the end).
 
 CI already covers part of it: the **windows-tests** job in
 `.github/workflows/ci.yml` installs `client/requirements.txt` on
