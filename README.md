@@ -40,6 +40,7 @@ knows how to stay out of a screen share.
 
 ## Table of contents
 
+- [See it](#see-it)
 - [Features](#features)
 - [What is *not* in this repo](#what-is-not-in-this-repo)
 - [Repository layout](#repository-layout)
@@ -58,6 +59,16 @@ knows how to stay out of a screen share.
 - [License](#license)
 
 ---
+
+## See it
+
+<p align="center">
+  <a href="docs/media/opengirgit-demo.mp4">
+    <img src="docs/media/opengirgit-demo-poster.jpg" alt="OpenGirGit demo — answers stream in, word by word" width="760">
+  </a>
+</p>
+
+<p align="center"><sub>▶ 22-second demo · <a href="docs/media/opengirgit-demo.mp4">watch the MP4</a> · music: <a href="https://ende.app">Sascha Ende (ende.app)</a>, CC BY 4.0</sub></p>
 
 ## Features
 
