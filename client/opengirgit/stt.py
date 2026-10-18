@@ -198,7 +198,7 @@ class LocalWhisperEngine(SttEngine):
         """Run the model on ``audio``; raises on failure."""
         segments, _info = self._model.transcribe(
             audio,
-            language=self._settings.language or None,
+            language="en",
             beam_size=1,
             vad_filter=False,
             condition_on_previous_text=False,

@@ -10,9 +10,8 @@ in [WINDOWS-CHECKLIST.md](WINDOWS-CHECKLIST.md).
 pip install pytest ruff
 pip install -r server/requirements.txt    # needed by the server tests
 pip install numpy PySide6                 # optional: dsp + offscreen UI tests
-pytest                                    # 161 offline tests, no network needed
-ruff check server client tests packaging tools
-python tools/collect_strings.py --check   # translation inventory is in sync
+pytest                                    # 152 offline tests, no network needed
+ruff check server client tests packaging
 ```
 
 ## Test layout
@@ -27,12 +26,11 @@ python tools/collect_strings.py --check   # translation inventory is in sync
 | `tests/test_client_config.py` | settings defaults, clamping, env overrides, context formatting |
 | `tests/test_client_stores.py` | bounded history, atomic writes, credential fallback, Markdown export |
 | `tests/test_client_audio.py` | device hints for missing loopback/microphone inputs |
-| `tests/test_client_i18n.py` | catalog loading/fallback, German completeness, placeholder parity, `collect_strings --check` |
 | `tests/test_client_hotkeys.py` | hotkey parsing + editor validation (skipped without PySide6) |
 | `tests/test_client_api.py` | SSE assembly, WebSocket transport (auto/forced, cancel, fallback), retry policy, URLs |
 | `tests/test_client_render.py` | markdown→HTML rendering, pygments highlighting, math/mermaid extraction, fallback |
 | `tests/test_client_webview.py` | KaTeX + mermaid rendering in the embedded QtWebEngine (offscreen; skipped without WebEngine) |
-| `tests/test_client_ui.py` | headless (offscreen) construction, streaming, capture queue, web-view swap, thumbnails, decoy cursor, dialogs, export, retranslation |
+| `tests/test_client_ui.py` | headless (offscreen) construction, streaming, capture queue, web-view swap, thumbnails, decoy cursor, dialogs, export |
 | `tests/e2e/run_e2e.py` | boots the real server + mock model and drives the client HTTP layer (SSE + WebSocket) |
 | `tests/e2e/stt_smoke.py` | optional live STT check (file replay or live capture, needs faster-whisper) |
 
@@ -139,7 +137,6 @@ The CI **windows-tests** job installs the client requirements on
 | Session export to Markdown | ✅ store + dialog tests (file written, clipboard, empty case); sessions are auto-named after their first question (truncation, empty and explicit-title cases tested) |
 | Code-language rewrites (per-answer variants) | ✅ rewrite/cache/restore/instruction/failure paths offscreen + variant persistence in the store; ⏳ visual check against a live provider |
 | Context file attachments | ✅ document extraction (no model call), image JPEG re-encode, stubbed vision transcription and save flow offscreen; ⏳ a real model transcribing a photographed page |
-| Translations (i18n) | ✅ catalog/fallback/placeholder tests, offscreen German retranslation; ⏳ native-speaker review of the German values |
 | Server security policy | ✅ HMAC-hashed OTPs (`compare_digest`), per-email send cooldown, attempt cap, JWT claim validation; non-loopback binds refuse to start with the default secret or the dev OTP echo; CORS off unless configured; client stores written owner-only; unit-tested |
 | Interface scale / hi-DPI | ✅ setting plumb-through + DPR-aware thumbnails; ⏳ visual review at 125–200 % |
 | Pixel polish (states, scrollbars, tabs) | ✅ hover/focus/checked styles, themed scrollbars and tooltips, tabbed settings — offscreen construction tests; ⏳ visual pass on Windows at 100–150 % |

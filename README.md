@@ -143,7 +143,6 @@ self-hosting, or checking verification? See [`CONTRIBUTING.md`](CONTRIBUTING.md)
 | **History** | Keeps sessions locally, with hotkey navigation and Markdown export. |
 | **Overlay** | Always-on-top panel with click-through, opacity, resizing and UI scaling. |
 | **Hotkeys** | 15 global actions, remappable in Settings. |
-| **Languages** | Offline English + German UI; add a language with one JSON file. |
 | **Stealth** | Capture exclusion, taskbar/Alt-Tab hiding and a decoy cursor. |
 | **Auth** | Local email-OTP accounts on your own server. |
 | **Packaging** | One-command launcher, Windows bundle and per-user installer. |
@@ -163,7 +162,8 @@ self-hosting, or checking verification? See [`CONTRIBUTING.md`](CONTRIBUTING.md)
 OpenGirGit targets **Windows 11 (64-bit)** only. Stealth is the point of the
 product, and Win32 capture exclusion is the only supported way to get it.
 Windows 10, Linux and macOS are out of scope: there are no builds, no install
-guides, and no support claims for them.
+guides, and no support claims for them. The interface, transcription and
+built-in answer prompt are English-only.
 
 | Capability | Windows 11 |
 |---|---|

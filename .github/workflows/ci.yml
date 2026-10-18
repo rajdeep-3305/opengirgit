@@ -26,10 +26,7 @@ jobs:
         run: pip install pytest ruff numpy
 
       - name: Lint
-        run: ruff check server client tests packaging tools
-
-      - name: Translation catalog is up to date
-        run: python tools/collect_strings.py --check
+        run: ruff check server client tests packaging
 
       - name: Unit tests
         run: pytest -q
@@ -59,7 +56,7 @@ jobs:
           pip install pytest ruff
 
       - name: Lint
-        run: ruff check server client tests packaging tools
+        run: ruff check server client tests packaging
 
       - name: Unit tests (core)
         env:

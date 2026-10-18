@@ -27,14 +27,15 @@ All server settings are environment variables (or `server/.env`); see
 | `LLM_TIMEOUT_SECONDS` | `120` | Read timeout for streaming requests. |
 | `SYSTEM_PROMPT` | built-in | Override the persona/system prompt. |
 | `DEEPGRAM_API_KEY` | – | If set, `/api/stt/token` mints short-lived Deepgram tokens. |
-| `DEEPGRAM_MODEL` / `DEEPGRAM_LANGUAGE` | `nova-2` / `en` | Deepgram stream parameters. |
+| `DEEPGRAM_MODEL` | `nova-2` | Deepgram model; transcription is fixed to English. |
 | `DEEPGRAM_TOKEN_TTL_SECONDS` | `600` | Minted token lifetime. |
 | `APP_VERSION` | `0.2.0` | Reported by `/api/version`. |
 
 ## Client settings
 
 Client settings live in `client/.env` (first run) and are then persisted to
-`~/.opengirgit/config.json`, editable from the **⚙ settings** dialog:
+`~/.opengirgit/config.json`, editable from the **⚙ settings** dialog. The
+interface and transcription are English-only; there is no language picker.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -42,7 +43,6 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `stt_engine` | `local` | `local` (faster-whisper) or `deepgram`. |
 | `whisper_model` | `base.en` | faster-whisper model name. |
 | `whisper_compute_type` | `int8` | `int8`, `int8_float16`, `float16`, `float32`. |
-| `language` | `en` | Transcription/speech language hint. |
 | `silence_seconds` | `0.9` | Silence that ends an utterance (0.2–3.0). Lower = transcript appears sooner but questions may split. |
 | `audio_source` | `system` | `system` (loopback) or `microphone`. |
 | `audio_device` | *(auto)* | Device id from the dropdown; empty selects the default. |
@@ -53,7 +53,6 @@ Client settings live in `client/.env` (first run) and are then persisted to
 | `opacity` | `0.96` | Overlay opacity. |
 | `screenshot_prompt` | built-in | Prompt used when you attach screenshot(s) with no typed question. |
 | `chat_transport` | `auto` | `auto` (WebSocket, falls back to SSE) · `sse` · `websocket`. |
-| `ui_language` | `en` | Translation catalog code (`en`, `de`, …) or `auto` for the desktop locale. |
 | `ui_scale` | `0` | Interface scale in percent (`0` follows the system/session DPI; 100–200 preset). Applied at startup — takes effect after a restart. |
 | `hotkeys` | see [the hotkey table](../README.md#global-hotkeys) | Hotkey combos as `"Shift+Alt+K"` strings; editable in the settings dialog (an empty value disables a hotkey). |
 

@@ -31,7 +31,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\python -m compileall -q client\opengirgit
 $env:QT_QPA_PLATFORM="offscreen"
 .venv\Scripts\python -m pytest -q
-.venv\Scripts\ruff check server client tests packaging tools
+.venv\Scripts\ruff check server client tests packaging
 ```
 
 - [ ] Test suite green (the WebEngine tests may skip if Chromium cannot start).
@@ -99,10 +99,9 @@ Ask something like *"Show the integral of x² as a formula and a mermaid flowcha
       (QtWebEngine creates child windows — this is the item most worth checking).
 - [ ] `.venv\Scripts\python -m opengirgit --check-render` prints `render check: OK`.
 
-## 7. Settings, language, scale, export
+## 7. Settings, scale, export
 
 - [ ] Settings opens as tabs (Server / Speech / Behaviour / Hotkeys) and every tab fits 100–150 % scaling.
-- [ ] Interface language → Deutsch applies immediately (labels, tooltips, statuses).
 - [ ] Interface scale → 125 %, restart: the whole UI scales; thumbnails stay sharp on a HiDPI display.
 - [ ] Answer transport → `websocket`: answers still stream (the server log shows no extra requests);
       stop the server and confirm the error surfaces instead of silently falling back.
@@ -137,7 +136,7 @@ Download `OpenGirGit-windows-x64-setup.exe` (same release/Actions run) and run i
       `%LOCALAPPDATA%\Programs\OpenGirGit`.
       SmartScreen warns once ("unknown publisher") — *More info → Run anyway* is expected
       for an unsigned installer.
-- [ ] The MIT license page appears; the wizard can be switched between English and German.
+- [ ] The MIT license page appears; the wizard is English-only.
 - [ ] The start-menu entry launches the app; the optional desktop-icon task works.
 - [ ] Re-running the installer over an existing install replaces the files and does not
       duplicate shortcuts (upgrade path).
@@ -174,9 +173,9 @@ Download `OpenGirGit-windows-x64-setup.exe` (same release/Actions run) and run i
       answer re-streams with the code rewritten; `auto` restores the original and
       re-picking `Python` is instant (cached). A follow-up asked while a variant is
       shown sees that variant.
-- [ ] Pick a language **before** asking: the next question carries the instruction and
+- [ ] Pick a code language **before** asking: the next question carries the instruction and
       the combo goes back to `auto` when the answer lands.
-- [ ] Kill the server and pick a language on a shown answer: the original answer comes
+- [ ] Kill the server and pick a code language on a shown answer: the original answer comes
       back with an error status (no half-rewritten answer is kept).
 - [ ] Interview details → Job description → Attach a file…: pick a `.pdf`/`.txt` — its
       text is appended under a `--- name ---` header (no model call).

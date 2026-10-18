@@ -10,13 +10,22 @@ RESUME = {
     "email": "ada@example.com",
     "summary": "First programmer.",
     "experience": [
-        {"title": "Analyst", "company": "Difference Engine Co", "duration": "1842-1843",
-         "description": "Wrote the first algorithm."}
+        {
+            "title": "Analyst",
+            "company": "Difference Engine Co",
+            "duration": "1842-1843",
+            "description": "Wrote the first algorithm.",
+        }
     ],
     "education": [{"degree": "Mathematics", "institution": "Home", "year": "1840"}],
     "skills": ["mathematics", "analytical engine"],
-    "projects": [{"name": "Bernoulli numbers", "description": "Note G",
-                  "technologies": ["Analytical Engine"]}],
+    "projects": [
+        {
+            "name": "Bernoulli numbers",
+            "description": "Note G",
+            "technologies": ["Analytical Engine"],
+        }
+    ],
     "languages": ["English"],
 }
 
@@ -82,29 +91,28 @@ def test_settings_hotkeys_merge_defaults():
 def test_new_settings_defaults_and_clamping():
     settings = AppSettings.from_dict({})
     assert settings.chat_transport == "auto"
-    assert settings.ui_language == "en"
     assert settings.ui_scale == 0
 
-    broken = AppSettings.from_dict(
-        {"chat_transport": "carrier-pigeon", "ui_language": "   ", "ui_scale": 7}
-    )
+    broken = AppSettings.from_dict({"chat_transport": "carrier-pigeon", "ui_scale": 7})
     assert broken.chat_transport == "auto"
-    assert broken.ui_language == "en"
     assert broken.ui_scale == 0
 
-    explicit = AppSettings.from_dict(
-        {"chat_transport": "websocket", "ui_language": "de", "ui_scale": "125"}
-    )
+    explicit = AppSettings.from_dict({"chat_transport": "websocket", "ui_scale": "125"})
     assert explicit.chat_transport == "websocket"
-    assert explicit.ui_language == "de"
     assert explicit.ui_scale == 125
 
 
 def test_new_settings_env_overrides(monkeypatch):
     monkeypatch.setenv("OPENGIRGIT_CHAT_TRANSPORT", "sse")
-    monkeypatch.setenv("OPENGIRGIT_UI_LANGUAGE", "de")
     monkeypatch.setenv("OPENGIRGIT_UI_SCALE", "150")
     settings = AppSettings.from_dict({}).apply_env()
     assert settings.chat_transport == "sse"
-    assert settings.ui_language == "de"
     assert settings.ui_scale == 150
+
+
+def test_english_only_settings_have_no_language_knobs(monkeypatch):
+    monkeypatch.setenv("OPENGIRGIT_LANGUAGE", "de")
+    monkeypatch.setenv("OPENGIRGIT_UI_LANGUAGE", "de")
+    settings = AppSettings.from_dict({"language": "de", "ui_language": "de"}).apply_env()
+    assert not hasattr(settings, "language")
+    assert not hasattr(settings, "ui_language")

@@ -41,8 +41,7 @@ every server and client setting.
 
 ```bash
 pytest                                      # offline test suite, no network needed
-ruff check server client tests packaging tools
-python tools/collect_strings.py --check     # translation catalog is in sync
+ruff check server client tests packaging
 python tests/e2e/run_e2e.py                 # real server + mock LLM over SSE and WebSocket
 ```
 
@@ -55,20 +54,6 @@ modules, and on Windows (3.12) where the shipped client runs.
 `tests/test_client_hotkeys.py` need a full Qt/WebEngine stack and stay
 informational on CI until they have been exercised on real hardware — see
 [`docs/WINDOWS-CHECKLIST.md`](docs/WINDOWS-CHECKLIST.md).
-
-## Translations
-
-UI strings are English source strings; catalog files live in
-`client/opengirgit/translations/`. When you add or change a user-visible
-string, run:
-
-```bash
-python tools/collect_strings.py            # regenerates en.json
-python tools/collect_strings.py --check    # what CI enforces
-```
-
-…and update `de.json` if you can. Details in
-[`client/opengirgit/translations/README.md`](client/opengirgit/translations/README.md).
 
 ## Bundling (optional)
 

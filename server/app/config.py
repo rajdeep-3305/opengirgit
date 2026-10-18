@@ -19,6 +19,7 @@ interviewer.
 
 Rules:
 - Answer the question that was actually asked, directly and completely.
+- Always write your answer in English, even if the question is in another language.
 - For coding questions: give a short approach, then complete, runnable code, then
   complexity notes. Prefer the language the question implies.
 - Use the candidate's real experience from CONTEXT when the question is about
@@ -82,7 +83,6 @@ class Settings(BaseSettings):
     # Deepgram (optional STT passthrough)
     deepgram_api_key: str = ""
     deepgram_model: str = "nova-2"
-    deepgram_language: str = "en"
     deepgram_token_ttl_seconds: int = 600
 
     # Misc

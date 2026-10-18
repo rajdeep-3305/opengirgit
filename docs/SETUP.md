@@ -23,7 +23,7 @@ Open the **[latest release page](https://github.com/rajdeep-3305/opengirgit/rele
 
 OpenGirGit needs **Windows 11 (64-bit)**. Windows 10, Linux and macOS are not
 supported — stealth is the point of the app, and the supported capture path is
-Windows 11.
+Windows 11. The interface and transcription are English-only.
 
 ## 2. Install
 

@@ -16,7 +16,6 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from .dsp import StreamResampler, float32_to_pcm16, rms, to_mono_float32
-from .i18n import tr
 
 TARGET_RATE = 16_000
 FRAMES_PER_BUFFER = 1024
@@ -107,7 +106,9 @@ def list_devices() -> list[AudioDevice]:
             is_default = bool(
                 default_input is not None and name == str(default_input.get("name", ""))
             )
-            devices.append(AudioDevice(id=f"input:{index}", name=name, kind=kind, is_default=is_default))
+            devices.append(
+                AudioDevice(id=f"input:{index}", name=name, kind=kind, is_default=is_default)
+            )
     except AudioError:
         pass
 
@@ -128,8 +129,8 @@ def default_device_id(source: str) -> str:
 def missing_device_hint(source: str) -> str:
     """Platform-aware explanation when no capture device of ``source`` exists."""
     if source in ("loopback", "system"):
-        return tr("no system-audio device found — install PyAudioWPatch or pick a microphone")
-    return tr("no microphone found — check the audio devices, then use 'Refresh'")
+        return "no system-audio device found — install PyAudioWPatch or pick a microphone"
+    return "no microphone found — check the audio devices, then use 'Refresh'"
 
 
 class AudioCapture(QThread):
@@ -154,6 +155,7 @@ class AudioCapture(QThread):
                 stream.stop_stream()  # unblocks read()
             except Exception:
                 pass
+
     # -- thread ------------------------------------------------------------ #
 
     def run(self) -> None:  # noqa: D102
@@ -197,7 +199,11 @@ class AudioCapture(QThread):
             if suffix.isdigit():
                 index = int(suffix)
 
-        info = sd.query_devices(index, "input") if index is not None else sd.query_devices(kind="input")
+        info = (
+            sd.query_devices(index, "input")
+            if index is not None
+            else sd.query_devices(kind="input")
+        )
         samplerate = int(info.get("default_samplerate") or 48000)
         channels = 1
 

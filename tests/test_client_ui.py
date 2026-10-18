@@ -135,8 +135,9 @@ def test_overlay_reports_errors(qt_app, tmp_path):
         def chat_stream(self, *args, **kwargs):
             raise RuntimeError("boom")
 
-    overlay = OverlayWindow(_Failing("http://127.0.0.1:1"), _settings(tmp_path),
-                            ConversationStore(), lambda: "")
+    overlay = OverlayWindow(
+        _Failing("http://127.0.0.1:1"), _settings(tmp_path), ConversationStore(), lambda: ""
+    )
     overlay.submit_question("hi")
     worker = overlay._worker  # noqa: SLF001
     assert worker is not None
@@ -685,23 +686,22 @@ def test_settings_dialog_persists_the_new_options(qt_app, tmp_path, monkeypatch)
     assert dialog._partials.isChecked() is True  # noqa: SLF001
     assert dialog._decoy_cursor.isChecked() is True  # noqa: SLF001
     assert dialog._transport.currentData() == "auto"  # noqa: SLF001
-    assert dialog._ui_language.currentData() == "en"  # noqa: SLF001
     assert dialog._ui_scale.currentData() == 0  # noqa: SLF001
 
     dialog._web_render.setChecked(False)  # noqa: SLF001
     dialog._partials.setChecked(False)  # noqa: SLF001
     dialog._decoy_cursor.setChecked(False)  # noqa: SLF001
     dialog._transport.setCurrentIndex(dialog._transport.findData("websocket"))  # noqa: SLF001
-    dialog._ui_language.setCurrentIndex(dialog._ui_language.findData("de"))  # noqa: SLF001
     dialog._ui_scale.setCurrentIndex(dialog._ui_scale.findData(125))  # noqa: SLF001
-    dialog._hotkey_edits[list(DEFAULT_HOTKEYS)[0]].setText(DEFAULT_HOTKEYS[list(DEFAULT_HOTKEYS)[0]])  # noqa: SLF001
+    dialog._hotkey_edits[list(DEFAULT_HOTKEYS)[0]].setText(
+        DEFAULT_HOTKEYS[list(DEFAULT_HOTKEYS)[0]]
+    )  # noqa: SLF001
     dialog._save()  # noqa: SLF001
 
     assert settings.web_render is False
     assert settings.partials is False
     assert settings.decoy_cursor is False
     assert settings.chat_transport == "websocket"
-    assert settings.ui_language == "de"
     assert settings.ui_scale == 125
     dialog.close()
     dialog.deleteLater()
@@ -754,33 +754,6 @@ def test_history_dialog_export_without_selection_warns(qt_app, tmp_path, monkeyp
     assert "Select a session" in dialog._status.text()  # noqa: SLF001
     dialog.close()
     dialog.deleteLater()
-
-
-def test_overlay_retranslates_when_the_language_changes(qt_app, tmp_path, monkeypatch):
-    from opengirgit import i18n
-
-    monkeypatch.setattr(i18n, "_current", "en")
-    i18n.set_language("de")
-    try:
-        overlay = OverlayWindow(_StubApi(), _settings(tmp_path), ConversationStore(), lambda: "")
-        assert overlay._ask_button.text() == "Fragen"  # noqa: SLF001
-        assert overlay._title_label.text() == "Antwort"  # noqa: SLF001
-        assert "Mikrofon" in overlay._mic_button.toolTip()  # noqa: SLF001
-        # the overlay answer panel keeps the dark stylesheet
-        overlay._show_text_answer("# Heading\n\n**bold** text")  # noqa: SLF001
-        assert "#ffffff" in overlay._answer_view.document().defaultStyleSheet()  # noqa: SLF001
-
-        assert overlay.add_capture(_png_b64()) is True
-        status = overlay._status.text()  # noqa: SLF001
-        assert "1 Screenshot bereit" in status
-        assert overlay.add_capture(_png_b64()) is True
-        assert "2 Screenshots bereit" in overlay._status.text()  # noqa: SLF001
-
-        overlay.erase()
-        assert overlay._status.text() == "geleert"  # noqa: SLF001
-        overlay.close()
-    finally:
-        i18n.set_language("en")
 
 
 def test_click_through_toggle_state_machine(qt_app, tmp_path, monkeypatch):

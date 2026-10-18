@@ -16,7 +16,6 @@ from .capture import RegionSelector, desktop_pixmap, last_capture_error, pixmap_
 from .config import AppSettings, load_dotenv_if_present
 from .dialogs import HistoryDialog, InfoDialog, LoginDialog, SettingsDialog
 from .hotkeys import IS_WINDOWS, GlobalHotkeyManager
-from .i18n import set_language, tr
 from .overlay import MOVE_STEP, OPACITY_STEP, SCROLL_STEP, OverlayWindow
 from .prompts import format_interview_context
 from .stores import ContextStore, ConversationStore, CredentialsStore, ResumeCache
@@ -64,9 +63,7 @@ class Listener(QObject):
         self._engine = engine
         capture.start()
         engine.start()
-        self._overlay.set_status(
-            tr("listening — {engine}").format(engine=describe_engine(settings))
-        )
+        self._overlay.set_status(f"listening — {describe_engine(settings)}")
 
     def stop(self) -> None:
         if self._capture is not None:
@@ -79,7 +76,7 @@ class Listener(QObject):
             self._engine.wait(4000)
             self._engine.deleteLater()
             self._engine = None
-        self._overlay.set_status(tr("idle"))
+        self._overlay.set_status("idle")
 
     def restart(self) -> None:
         self.stop()
@@ -88,7 +85,7 @@ class Listener(QObject):
     # -- slots (always on the UI thread) ------------------------------------ #
 
     def _on_started(self, rate: int) -> None:
-        self._overlay.set_status(tr("capturing @ {rate} Hz").format(rate=rate))
+        self._overlay.set_status(f"capturing @ {rate} Hz")
 
     def _on_partial(self, text: str) -> None:
         self._overlay.set_partial(text)
@@ -97,7 +94,7 @@ class Listener(QObject):
         self._overlay.set_final(text)
 
     def _on_status(self, text: str) -> None:
-        self._overlay.set_status(tr("stt: {status}").format(status=text))
+        self._overlay.set_status(f"stt: {text}")
 
     def _on_error(self, message: str) -> None:
         self._overlay.set_status(message, error=True)
@@ -106,7 +103,9 @@ class Listener(QObject):
 
 
 class AppController(QObject):
-    def __init__(self, app: QApplication, settings: AppSettings, email: str, api: ApiClient) -> None:
+    def __init__(
+        self, app: QApplication, settings: AppSettings, email: str, api: ApiClient
+    ) -> None:
         super().__init__()
         self._app = app
         self._settings = settings
@@ -175,7 +174,11 @@ class AppController(QObject):
         if items:
             self._overlay.load_items(
                 [
-                    {"question": i.get("question", ""), "answer": i.get("answer", ""), "kind": i.get("kind", "chat")}
+                    {
+                        "question": i.get("question", ""),
+                        "answer": i.get("answer", ""),
+                        "kind": i.get("kind", "chat"),
+                    }
                     for i in items
                 ]
             )
@@ -192,7 +195,7 @@ class AppController(QObject):
 
     def take_screenshot(self) -> None:
         if self._selector is not None:
-            self._overlay.set_status(tr("region selection already open"))
+            self._overlay.set_status("region selection already open")
             return
         background = None
         if not IS_WINDOWS:
@@ -201,7 +204,7 @@ class AppController(QObject):
             # out of the picture).
             background = desktop_pixmap()
             if background is None:
-                message = tr("could not capture the screen")
+                message = "could not capture the screen"
                 detail = last_capture_error()
                 if detail:
                     message = f"{message} — {detail}"
@@ -221,11 +224,11 @@ class AppController(QObject):
         selector, self._selector = self._selector, None
         pixmap = selector.capture_selection(rect) if selector is not None else None
         if pixmap is None or pixmap.isNull():
-            self._overlay.set_status(tr("could not capture that region"), error=True)
+            self._overlay.set_status("could not capture that region", error=True)
             return
         encoded = pixmap_to_jpeg_b64(pixmap)
         if not encoded:
-            self._overlay.set_status(tr("could not encode the screenshot"), error=True)
+            self._overlay.set_status("could not encode the screenshot", error=True)
             return
         # Queued: the next question (typed, spoken or Ask) carries it along.
         self._overlay.add_capture(encoded)
@@ -236,9 +239,7 @@ class AppController(QObject):
         failures = self._hotkeys.register_all(self._settings.hotkeys)
         if failures:
             self._overlay.set_status(
-                tr("hotkeys unavailable (already in use): {actions}").format(
-                    actions=", ".join(sorted(failures))
-                ),
+                f"hotkeys unavailable (already in use): {', '.join(sorted(failures))}",
                 error=True,
             )
             return
@@ -283,7 +284,6 @@ class AppController(QObject):
         if dialog.exec() == QDialog.Accepted:
             self._listener.stop()
             self._listener.deleteLater()
-            set_language(self._settings.ui_language)
             self._overlay.apply_settings(self._settings)
             self._hotkeys.unregister_all()
             self._register_hotkeys()
@@ -295,7 +295,7 @@ class AppController(QObject):
             self._overlay.set_api(self._api)
             self._listener = Listener(self._overlay, self._settings, self._api)
             if self._settings.ui_scale != previous_scale:
-                self._overlay.set_status(tr("UI scale applies after a restart"))
+                self._overlay.set_status("UI scale applies after a restart")
 
     def open_history(self) -> None:
         HistoryDialog(self._conversations).exec()
@@ -306,7 +306,7 @@ class AppController(QObject):
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
             self._context = dialog.result
             self._context_store.save(self._context)
-            self._overlay.set_status(tr("interview details saved"))
+            self._overlay.set_status("interview details saved")
 
     def prompt_info_once(self) -> None:
         if not self._context.get("company") and not self._context.get("resume"):
@@ -320,7 +320,9 @@ class AppController(QObject):
         self._app.quit()
 
 
-def _authenticate(settings: AppSettings, credentials: CredentialsStore) -> tuple[str, ApiClient] | None:
+def _authenticate(
+    settings: AppSettings, credentials: CredentialsStore
+) -> tuple[str, ApiClient] | None:
     """Return (email, client) for an authenticated session, or None if cancelled."""
     stored = credentials.load()
     token = str(stored.get("access_token") or "")
@@ -359,7 +361,6 @@ def _authenticate(settings: AppSettings, credentials: CredentialsStore) -> tuple
 def main(argv: list[str] | None = None) -> int:
     load_dotenv_if_present()
     settings = AppSettings.load()
-    set_language(settings.ui_language)
 
     # Optional interface scaling (0 = leave the system/session DPI alone).
     if settings.ui_scale:

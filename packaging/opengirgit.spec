@@ -41,11 +41,6 @@ hiddenimports = [
 # Vendored KaTeX + mermaid assets used by the math/diagram answer view (MIT).
 datas += [(str(ROOT / "client" / "opengirgit" / "assets"), "opengirgit/assets")]
 
-# UI translation catalogs (JSON) served from opengirgit/translations.
-datas += [
-    (str(ROOT / "client" / "opengirgit" / "translations"), "opengirgit/translations")
-]
-
 # Heavy scientific/STT stack: grab package data, shared libraries and modules.
 for package in (
     "faster_whisper",

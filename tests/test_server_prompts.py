@@ -13,6 +13,7 @@ from app.prompts import (
 def test_system_message_without_context_is_just_the_persona():
     message = build_system_message(None)
     assert message
+    assert "English" in message
     assert "<<<CONTEXT" not in message
 
 

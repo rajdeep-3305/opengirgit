@@ -31,7 +31,7 @@ def build_deepgram_url() -> str:
     settings = get_settings()
     params = {
         "model": settings.deepgram_model,
-        "language": settings.deepgram_language,
+        "language": "en",
         "encoding": "linear16",
         "sample_rate": 16000,
         "channels": 1,
@@ -47,8 +47,7 @@ async def mint_deepgram_token() -> dict:
     settings = get_settings()
     if not deepgram_configured():
         raise SttError(
-            "Deepgram is not configured on this server. "
-            "Use the local (faster-whisper) STT engine.",
+            "Deepgram is not configured on this server. Use the local (faster-whisper) STT engine.",
             status_code=501,
         )
 

@@ -26,7 +26,6 @@ from .api import ApiClient, ApiError
 from .audio import list_devices
 from .capture import pixmap_from_b64
 from .config import AppSettings
-from .i18n import tr
 from .preview import StreamPreview
 from .prompts import rewrite_answer_prompt
 from .stores import ConversationStore
@@ -127,12 +126,12 @@ class _PendingThumb(QWidget):
         label.setObjectName("thumb")
         label.setPixmap(_scaled_thumb(pixmap_from_b64(encoded)))
         label.move(4, 4)
-        label.setToolTip(tr("screenshot {index} — sent with your next question").format(index=index + 1))
+        label.setToolTip(f"screenshot {index + 1} — sent with your next question")
         remove = QPushButton("\u2715", self)
         remove.setObjectName("thumb_remove")
         remove.setFixedSize(16, 16)
         remove.move(size - 18, 2)
-        remove.setToolTip(tr("remove this screenshot"))
+        remove.setToolTip("remove this screenshot")
         remove.clicked.connect(lambda: self.remove_requested.emit(self._encoded))
 
 
@@ -240,7 +239,7 @@ class OverlayWindow(QWidget):
         self._device_combo.currentIndexChanged.connect(self._on_device_changed)
         row1.addWidget(self._device_combo)
 
-        self._status_text = tr("idle")
+        self._status_text = "idle"
         self._status = QLabel(self._status_text)
         self._status.setObjectName("status")
         row1.addWidget(self._status, 1)
@@ -353,39 +352,39 @@ class OverlayWindow(QWidget):
 
     def retranslate(self) -> None:
         """(Re)apply the active language to the static interface texts."""
-        self._mic_button.setToolTip(tr("Listen to system audio / microphone"))
-        self._device_combo.setToolTip(tr("Audio device to listen to"))
+        self._mic_button.setToolTip("Listen to system audio / microphone")
+        self._device_combo.setToolTip("Audio device to listen to")
         self._click_button.setToolTip(
-            tr("Click-through — clicks work through to the app underneath ({hotkey})").format(
+            "Click-through — clicks work through to the app underneath ({hotkey})".format(
                 hotkey=self._settings.hotkeys.get("click_through", "")
             )
         )
-        self._info_button.setToolTip(tr("Interview details (resume, JD, company)"))
-        self._history_button.setToolTip(tr("History"))
-        self._settings_button.setToolTip(tr("Settings"))
-        self._collapse_button.setToolTip(tr("Collapse / expand answers"))
-        self._quit_button.setToolTip(tr("Quit"))
+        self._info_button.setToolTip("Interview details (resume, JD, company)")
+        self._history_button.setToolTip("History")
+        self._settings_button.setToolTip("Settings")
+        self._collapse_button.setToolTip("Collapse / expand answers")
+        self._quit_button.setToolTip("Quit")
 
-        self._stt_input.setPlaceholderText(tr("interviewer's words appear here…"))
-        self._ask_button.setText(tr("Ask"))
+        self._stt_input.setPlaceholderText("interviewer's words appear here…")
+        self._ask_button.setText("Ask")
         self._ask_button.setToolTip(
-            tr("Ask with the manual box ({hotkey})").format(
+            "Ask with the manual box ({hotkey})".format(
                 hotkey=self._settings.hotkeys.get("ask", "Shift+Alt+A")
             )
         )
-        self._manual_input.setPlaceholderText(tr("type your own question…"))
-        self._screenshot_button.setToolTip(tr("Screenshot a region (repeat to attach several)"))
-        self._erase_button.setToolTip(tr("Erase inputs and answer"))
-        self._opacity_down_button.setToolTip(tr("Opacity down"))
-        self._opacity_up_button.setToolTip(tr("Opacity up"))
+        self._manual_input.setPlaceholderText("type your own question…")
+        self._screenshot_button.setToolTip("Screenshot a region (repeat to attach several)")
+        self._erase_button.setToolTip("Erase inputs and answer")
+        self._opacity_down_button.setToolTip("Opacity down")
+        self._opacity_up_button.setToolTip("Opacity up")
 
-        self._title_label.setText(tr("Answer"))
-        self._code_label.setText(tr("code:"))
+        self._title_label.setText("Answer")
+        self._code_label.setText("code:")
         self._language_combo.setToolTip(
-            tr("Prefer this language for code, or rewrite the current answer in it")
+            "Prefer this language for code, or rewrite the current answer in it"
         )
-        self._copy_button.setText(tr("copy"))
-        self._copy_button.setToolTip(tr("Copy the answer"))
+        self._copy_button.setText("copy")
+        self._copy_button.setToolTip("Copy the answer")
         self._update_position_label()
 
     # ------------------------------------------------------------ lifecycle #
@@ -463,13 +462,13 @@ class OverlayWindow(QWidget):
             self._settings.audio_device = device_id
             self._settings.save()
             if self._mic_button.isChecked():
-                self.set_status(tr("device changed — restarting capture…"))
+                self.set_status("device changed — restarting capture…")
                 self._mic_button.setChecked(False)
                 self._mic_button.setChecked(True)
 
     def _on_mic_toggled(self, checked: bool) -> None:
         self._mic_button.setText("⏹" if checked else "🎙")
-        self.set_status(tr("starting capture…") if checked else tr("idle"))
+        self.set_status("starting capture…" if checked else "idle")
         self.mic_toggled.emit(checked)
 
     def set_mic_active(self, active: bool) -> None:
@@ -529,13 +528,13 @@ class OverlayWindow(QWidget):
         self._clear_attachments()
         self._clear_pending()
         self._reset_answer_panel()
-        self.set_status(tr("erased"))
+        self.set_status("erased")
 
     def _copy_answer(self) -> None:
         clipboard = QGuiApplication.clipboard()
         if clipboard is not None and self._answer_buffer:
             clipboard.setText(self._answer_buffer)
-            self.set_status(tr("answer copied"))
+            self.set_status("answer copied")
 
     # ------------------------------------------------------------- captures #
 
@@ -543,7 +542,7 @@ class OverlayWindow(QWidget):
         """Queue a screenshot; it is attached to the next question asked."""
         if len(self._pending_images) >= MAX_CAPTURES:
             self.set_status(
-                tr("maximum {count} screenshots per question").format(count=MAX_CAPTURES),
+                f"maximum {MAX_CAPTURES} screenshots per question",
                 error=True,
             )
             return False
@@ -556,11 +555,11 @@ class OverlayWindow(QWidget):
 
     def _capture_status(self, count: int, *, hint: bool = False) -> str:
         if count == 1:
-            text = tr("1 screenshot ready")
+            text = "1 screenshot ready"
         else:
-            text = tr("{count} screenshots ready").format(count=count)
+            text = f"{count} screenshots ready"
         if hint:
-            text += " — " + tr("Ask/Enter sends, 📷 adds another")
+            text += " — " + "Ask/Enter sends, 📷 adds another"
         return text
 
     def _rebuild_pending_row(self) -> None:
@@ -582,7 +581,7 @@ class OverlayWindow(QWidget):
         if count:
             self.set_status(self._capture_status(count))
         else:
-            self.set_status(tr("screenshots cleared"))
+            self.set_status("screenshots cleared")
 
     def _clear_pending(self) -> None:
         self._pending_images = []
@@ -612,13 +611,13 @@ class OverlayWindow(QWidget):
             label = QLabel()
             label.setObjectName("thumb")
             label.setPixmap(_scaled_thumb(pixmap))
-            label.setToolTip(tr("screenshot {index}").format(index=index + 1))
+            label.setToolTip(f"screenshot {index + 1}")
             self._attachment_row.insertWidget(self._attachment_row.count() - 1, label)
             self._attachment_widgets.append(label)
             shown += 1
         hidden = len(images_b64) - shown
         if shown and hidden > 0:
-            more = QLabel(tr("+{hidden} more").format(hidden=hidden))
+            more = QLabel(f"+{hidden} more")
             more.setObjectName("status")
             self._attachment_row.insertWidget(self._attachment_row.count() - 1, more)
             self._attachment_widgets.append(more)
@@ -636,16 +635,14 @@ class OverlayWindow(QWidget):
 
         language = self._language_combo.currentText()
         if language != "auto" and kind == "chat":
-            question = (
-                f"{question}\n\n(If the answer contains code, write it in {language}.)"
-            )
+            question = f"{question}\n\n(If the answer contains code, write it in {language}.)"
 
         history = self._conversation_payload()
         self.cancel_stream()
         self._pending = {"question": question, "kind": "chat"}
         self._reset_answer_panel()
         self._streaming = True
-        self.set_status(tr("asking…"))
+        self.set_status("asking…")
 
         def stream(cancel, on_chunk):
             return self._api.chat_stream(
@@ -660,16 +657,19 @@ class OverlayWindow(QWidget):
 
     def submit_vision(self, prompt: str, images_b64: list[str]) -> None:
         if not images_b64:
-            self.set_status(tr("no image captured"), error=True)
+            self.set_status("no image captured", error=True)
             return
         prompt = prompt.strip() or self._settings.screenshot_prompt
         self._set_attachments(images_b64)
         history = self._conversation_payload()
         self.cancel_stream()
-        self._pending = {"question": f"[{len(images_b64)} screenshot(s)] {prompt}", "kind": "vision"}
+        self._pending = {
+            "question": f"[{len(images_b64)} screenshot(s)] {prompt}",
+            "kind": "vision",
+        }
         self._reset_answer_panel()
         self._streaming = True
-        self.set_status(tr("analysing screenshot…"))
+        self.set_status("analysing screenshot…")
 
         def stream(cancel, on_chunk):
             return self._api.vision_stream(
@@ -743,7 +743,11 @@ class OverlayWindow(QWidget):
                     self._show_text_answer(payload)
                     return
                 now = time.monotonic()
-                if not force and self._web_visible and now - self._last_web_render < WEB_FLUSH_INTERVAL:
+                if (
+                    not force
+                    and self._web_visible
+                    and now - self._last_web_render < WEB_FLUSH_INTERVAL
+                ):
                     return  # a later flush (or the final one) picks up the newest text
                 self._last_web_render = now
                 if not self._web_visible:
@@ -778,7 +782,7 @@ class OverlayWindow(QWidget):
             view = RichAnswerWebView(self._answer_panel)
         except Exception as exc:  # noqa: BLE001 - fall back to the text view
             self._web_failed = True
-            self.set_status(tr("math/diagram rendering unavailable: {error}").format(error=exc))
+            self.set_status(f"math/diagram rendering unavailable: {exc}")
             return None
         view.ready_changed.connect(self._on_web_ready)
         self._answer_layout.insertWidget(self._answer_view_index + 1, view, 1)
@@ -837,7 +841,7 @@ class OverlayWindow(QWidget):
         self._streaming = False
         self._worker = None
         self._preview.hide_soon()
-        self.set_status(tr("cancelled"))
+        self.set_status("cancelled")
 
     def _on_answer_done(self, question: str, answer: str, *, kind: str) -> None:
         self._streaming = False
@@ -845,7 +849,7 @@ class OverlayWindow(QWidget):
         self._answer_buffer = answer or self._answer_buffer
         self._flush_answer(force=True)
         self._preview.hide_soon()
-        self.set_status(tr("done"))
+        self.set_status("done")
 
         if self._answer_buffer.strip():
             item = {
@@ -869,12 +873,10 @@ class OverlayWindow(QWidget):
         self._worker = None
         self._flush_answer(force=True)
         self._preview.hide_soon()
-        self.set_status(tr("error: {message}").format(message=message), error=True)
+        self.set_status(f"error: {message}", error=True)
         if self._answer_buffer.strip():
             self._render_answer(
-                self._answer_buffer
-                + "\n\n---\n"
-                + tr("*stream interrupted: {message}*").format(message=message),
+                self._answer_buffer + "\n\n---\n" + f"*stream interrupted: {message}*",
                 force=True,
             )
             self._items.append(
@@ -893,7 +895,7 @@ class OverlayWindow(QWidget):
         if target == self._variant_language:
             return
         if self._streaming:
-            self.set_status(tr("answer still streaming"))
+            self.set_status("answer still streaming")
             self._select_language(self._variant_language)
             return
         if not self._items or self._index < 0:
@@ -919,11 +921,11 @@ class OverlayWindow(QWidget):
         self._answer_buffer = text
         self._render_answer(force=True)
         if language == "auto":
-            self.set_status(tr("showing the original answer"))
+            self.set_status("showing the original answer")
         elif cached:
-            self.set_status(tr("{language} variant (cached)").format(language=language))
+            self.set_status(f"{language} variant (cached)")
         else:
-            self.set_status(tr("{language} variant ready").format(language=language))
+            self.set_status(f"{language} variant ready")
 
     def _start_rewrite(self, item: dict[str, Any], language: str) -> None:
         """Re-ask the model to write one existing answer's code in ``language``."""
@@ -933,7 +935,7 @@ class OverlayWindow(QWidget):
         self._rewrite_item = item
         self._reset_answer_panel()
         self._streaming = True
-        self.set_status(tr("rewriting in {language}…").format(language=language))
+        self.set_status(f"rewriting in {language}…")
 
         def stream(cancel, on_chunk):
             return self._api.chat_stream(
@@ -957,7 +959,7 @@ class OverlayWindow(QWidget):
         if item is None or item not in self._items or not language or not text.strip():
             if item is not None:
                 self._restore_base_answer(item)
-            self.set_status(tr("rewrite failed"), error=True)
+            self.set_status("rewrite failed", error=True)
             return
         item.setdefault("variants", {})[language] = text
         self._conversations.set_variant(item["question"], item["answer"], language, text)
@@ -966,7 +968,7 @@ class OverlayWindow(QWidget):
             self._select_language(language)
             self._answer_buffer = text
             self._flush_answer(force=True)
-        self.set_status(tr("{language} variant ready").format(language=language))
+        self.set_status(f"{language} variant ready")
 
     def _on_rewrite_error(self, message: str) -> None:
         self._streaming = False
@@ -977,7 +979,7 @@ class OverlayWindow(QWidget):
         self._rewrite_item = None
         if item is not None:
             self._restore_base_answer(item)
-        self.set_status(tr("error: {message}").format(message=message), error=True)
+        self.set_status(f"error: {message}", error=True)
 
     def _restore_base_answer(self, item: dict[str, Any]) -> None:
         """Put the untouched answer back after a failed rewrite."""
@@ -1091,22 +1093,20 @@ class OverlayWindow(QWidget):
         hotkey = self._settings.hotkeys.get("click_through", "")
         if enabled and not hotkey:
             self.set_status(
-                tr("click-through needs a hotkey to switch back — set one in Settings"),
+                "click-through needs a hotkey to switch back — set one in Settings",
                 error=True,
             )
             return
         if not stealth.set_click_through(self, enabled):
             self._click_button.setChecked(False)
-            self.set_status(tr("click-through is unavailable on this system"), error=True)
+            self.set_status("click-through is unavailable on this system", error=True)
             return
         self._click_through = enabled
         self._click_button.setChecked(enabled)
         if enabled:
-            self.set_status(
-                tr("click-through on — {hotkey} returns control").format(hotkey=hotkey)
-            )
+            self.set_status(f"click-through on — {hotkey} returns control")
         else:
-            self.set_status(tr("click-through off"))
+            self.set_status("click-through off")
 
     def fade_in(self) -> None:
         """Fade the overlay in at startup (harmlessly ignored where unsupported)."""
@@ -1127,7 +1127,7 @@ class OverlayWindow(QWidget):
         self.setWindowOpacity(value)
         self._settings.opacity = value
         self._settings.save()
-        self.set_status(tr("opacity {percent}%").format(percent=int(value * 100)))
+        self.set_status(f"opacity {int(value * 100)}%")
 
     def nudge_move(self, dx: int, dy: int) -> None:
         self.move(self.x() + dx, self.y() + dy)
@@ -1151,11 +1151,7 @@ class OverlayWindow(QWidget):
             self.submit_vision(self._settings.screenshot_prompt, self._take_pending_images())
 
     def report_api_error(self, error: Exception) -> None:
-        message = (
-            str(error)
-            if isinstance(error, ApiError)
-            else tr("unexpected error: {error}").format(error=error)
-        )
+        message = str(error) if isinstance(error, ApiError) else f"unexpected error: {error}"
         self.set_status(message, error=True)
 
     # ------------------------------------------------------------------ info #

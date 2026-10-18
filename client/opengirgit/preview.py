@@ -17,7 +17,6 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
 from . import stealth
-from .i18n import tr
 
 #: How much of the stream tail the popup keeps (bounds the popup height).
 PREVIEW_CHARS = 360
@@ -77,7 +76,7 @@ class StreamPreview(QWidget):
         inner = QVBoxLayout(frame)
         inner.setContentsMargins(10, 7, 10, 8)
         inner.setSpacing(3)
-        self._title = QLabel(tr("Answer"), frame)
+        self._title = QLabel("Answer", frame)
         self._title.setObjectName("preview_title")
         self._text = QLabel("", frame)
         self._text.setObjectName("preview_text")

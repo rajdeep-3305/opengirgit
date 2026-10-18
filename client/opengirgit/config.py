@@ -41,7 +41,6 @@ _ENV_MAP = {
     "OPENGIRGIT_STT_ENGINE": ("stt_engine", str),
     "OPENGIRGIT_WHISPER_MODEL": ("whisper_model", str),
     "OPENGIRGIT_WHISPER_COMPUTE_TYPE": ("whisper_compute_type", str),
-    "OPENGIRGIT_LANGUAGE": ("language", str),
     "OPENGIRGIT_AUDIO_SOURCE": ("audio_source", str),
     "OPENGIRGIT_AUDIO_DEVICE": ("audio_device", str),
     "OPENGIRGIT_AUTO_ASK": ("auto_ask", "bool"),
@@ -52,7 +51,6 @@ _ENV_MAP = {
     "OPENGIRGIT_OPACITY": ("opacity", float),
     "OPENGIRGIT_SCREENSHOT_PROMPT": ("screenshot_prompt", str),
     "OPENGIRGIT_CHAT_TRANSPORT": ("chat_transport", str),
-    "OPENGIRGIT_UI_LANGUAGE": ("ui_language", str),
     "OPENGIRGIT_UI_SCALE": ("ui_scale", "int"),
 }
 
@@ -71,7 +69,6 @@ class AppSettings:
     stt_engine: str = "local"  # "local" | "deepgram"
     whisper_model: str = "base.en"
     whisper_compute_type: str = "int8"
-    language: str = "en"
     silence_seconds: float = 0.9  # silence that ends an utterance (lower = snappier)
 
     # Audio capture
@@ -88,7 +85,6 @@ class AppSettings:
 
     # Transport / interface
     chat_transport: str = "auto"  # "auto" (WebSocket with SSE fallback) | "sse" | "websocket"
-    ui_language: str = "en"  # translation code from client/opengirgit/translations, "auto" = system
     ui_scale: int = 0  # percent (0 = follow the session/system DPI)
 
     hotkeys: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_HOTKEYS))
@@ -119,7 +115,6 @@ class AppSettings:
         except (TypeError, ValueError):
             scale = 0
         settings.ui_scale = scale if 80 <= scale <= 300 else 0
-        settings.ui_language = str(settings.ui_language or "en").strip() or "en"
         return settings
 
     def apply_env(self) -> AppSettings:

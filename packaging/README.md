@@ -46,7 +46,7 @@ the PyInstaller folder into `OpenGirGit-windows-x64-setup.exe`:
 It installs **per user on Windows 11 (64-bit)** (`PrivilegesRequired=lowest`,
 `MinVersion=10.0.22000`): no UAC prompt, files in
 `%LOCALAPPDATA%\Programs\OpenGirGit`, start-menu entry, optional desktop icon,
-German + English wizard, MIT license shown before install, and a normal
+English-only wizard, MIT license shown before install, and a normal
 uninstaller. Windows 10 is refused; runtime configuration is unchanged (`.env`
 next to the exe). The installer is **not code-signed** — Windows SmartScreen will
 warn once, "More info → Run anyway" is expected. Release tags build and attach it
@@ -71,9 +71,8 @@ magick icon-16.png icon-24.png icon-32.png icon-48.png icon-64.png \
 
 * **Size.** The folder is large (PySide6 + QtWebEngine + faster-whisper/ctranslate2
   + numpy): a few hundred MB. This is the price of offline STT and the offline
-  math/diagram renderer. KaTeX + mermaid add only ~3 MB, the
-  translation catalogs a few KB; the spec drops Chromium's locale paks except
-  `en-US.pak` (~40 MB saved). Set `OPENGIRGIT_WEB_RENDER=false` to skip creating
+  math/diagram renderer. KaTeX + mermaid add only ~3 MB; the spec drops
+  Chromium's locale paks except `en-US.pak` (~40 MB saved). Set `OPENGIRGIT_WEB_RENDER=false` to skip creating
   the embedded browser at run time (the files stay in the bundle either way).
 * **Self-test.** `OpenGirGit.exe --check-render` (or
   `python -m opengirgit --check-render`) starts the bundled browser headlessly,
@@ -81,9 +80,6 @@ magick icon-16.png icon-24.png icon-32.png icon-48.png icon-64.png \
   way to confirm the math/diagram path works on a machine. Exit code 0 = OK.
   `--print-settings`, `--list-devices` and `--help` are forwarded to the client
   without starting the bundled server.
-* **Language files.** `opengirgit/translations/*.json` ship in the bundle; add a
-  catalog next to the executable if you prefer (the app reads its own package
-  directory, so a rebuild is the supported route).
 * **Console window.** The launcher is built with `console=True` so server logs
   and dev-mode OTP codes stay visible; set `SMTP_*` for real email and you can
   rebuild with `console=False` if you prefer a silent app.
