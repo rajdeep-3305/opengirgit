@@ -1,5 +1,9 @@
 # Windows 11 verification checklist
 
+> **Archived 2026-10-19.** The project is no longer maintained. This checklist
+> was not completed and is kept only as a record of the planned Windows 11
+> pass. See [ARCHIVE.md](../ARCHIVE.md).
+
 Everything in [`VERIFICATION.md`](VERIFICATION.md) → *Verification status* that
 is still marked **⏳** is either Windows-only (WASAPI loopback,
 `RegisterHotKey`, `WDA_EXCLUDEFROMCAPTURE`, the GDI decoy cursor, `run.ps1`, the

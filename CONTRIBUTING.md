@@ -1,5 +1,9 @@
 # Contributing
 
+> **Archived 2026-10-19.** OpenGirGit is no longer maintained and does not accept
+> contributions. This guide is kept for historical reference only. See
+> [ARCHIVE.md](ARCHIVE.md).
+
 Thanks for taking the time to contribute. A few ground rules first:
 
 - OpenGirGit is a **clean-room** project. Do not contribute code, strings,

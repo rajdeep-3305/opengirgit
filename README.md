@@ -1,5 +1,10 @@
 # OpenGirGit
 
+> **Archived on 2026-10-19.** OpenGirGit is no longer maintained. It is published
+> as a clean-room reference; there are no updates, support, or security fixes.
+> Read the [archive notice](ARCHIVE.md) for why the project stopped and what was
+> verified.
+
 <p align="center">
   <img src="docs/media/opengirgit-hero.png" alt="OpenGirGit — stay in the room, not in the share" width="100%">
 </p>
@@ -31,6 +36,7 @@ run your own server, plug in your own model, and pay nobody.
 
 ## Table of contents
 
+- [Archive status](#archive-status)
 - [Install](#install)
 - [Features](#features)
 - [What is *not* in this repo](#what-is-not-in-this-repo)
@@ -40,6 +46,19 @@ run your own server, plug in your own model, and pay nobody.
 - [License](#license)
 
 ---
+
+## Archive status
+
+This repository is archived and read-only. **v0.2.3 is the final release.** The
+local speech-to-text plus local-LLM path was too slow for a live interview on
+ordinary hardware; switching to a fast cloud model adds an API bill and setup
+friction, and the generic answer prompts were not competitive with a product
+built specifically for interviews. The code and release assets remain available
+for reference, but this is not a supported product.
+
+The install instructions below are retained for historical context. See
+[ARCHIVE.md](ARCHIVE.md) for the full closure notes and the limits of what was
+verified.
 
 ## Install
 
